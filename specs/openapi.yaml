@@ -1,0 +1,2370 @@
+openapi: 3.1.0
+info:
+  title: Punto Cumbre API
+  version: 1.0.0
+  description: |
+    API para la plataforma de arriendo de equipos de montaña "Punto Cumbre".
+
+    ## Flujo principal
+    1. El cliente navega el catálogo de equipos por categoría.
+    2. El cliente verifica disponibilidad seleccionando fechas.
+    3. El cliente solicita una cotización indicando los equipos y cantidades.
+    4. El sistema genera la cotización automáticamente (precio por día × días).
+    5. El cliente confirma la cotización → se crea una reserva.
+    6. El administrador gestiona las reservas desde el panel de administración.
+
+    ## Actores
+    - **Cliente**: No requiere cuenta. Se identifica con nombre, email y teléfono.
+    - **Administrador**: Accede mediante ruta oculta con login usuario/contraseña (JWT).
+  contact:
+    name: Punto Cumbre
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8000
+    description: Servidor de desarrollo local
+  - url: https://api.puntocumbre.cl
+    description: Servidor de producción
+
+tags:
+  - name: Catálogo
+    description: Endpoints públicos para navegar el catálogo de equipos
+  - name: Disponibilidad
+    description: Verificación de disponibilidad de equipos por fechas
+  - name: Cotizaciones
+    description: Solicitud y consulta de cotizaciones por parte del cliente
+  - name: Reservas
+    description: Consulta de reservas por parte del cliente
+  - name: Reparaciones
+    description: Servicios de reparación (información y solicitudes)
+  - name: "Admin: Autenticación"
+    description: Autenticación del administrador
+  - name: "Admin: Equipos"
+    description: Gestión de equipos por el administrador
+  - name: "Admin: Categorías"
+    description: Gestión de categorías por el administrador
+  - name: "Admin: Reservas"
+    description: Gestión de reservas y dashboard del administrador
+  - name: "Admin: Cotizaciones"
+    description: Consulta de cotizaciones por el administrador
+  - name: "Admin: Notificaciones"
+    description: Gestión de notificaciones del administrador
+  - name: "Admin: Reparaciones"
+    description: Gestión de solicitudes de reparación por el administrador
+
+# ──────────────────────────────────────────────
+# Security Schemes
+# ──────────────────────────────────────────────
+security: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtenido desde POST /api/v1/admin/login
+
+  # ────────────────────────────────────────────
+  # Schemas
+  # ────────────────────────────────────────────
+  schemas:
+
+    # ── Category ──────────────────────────────
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identificador único de la categoría
+          examples:
+            - "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        name:
+          type: string
+          description: Nombre de la categoría
+          examples:
+            - "Crampones y piolets"
+        description:
+          type: string
+          nullable: true
+          description: Descripción de la categoría
+          examples:
+            - "Equipos esenciales para escalada en hielo y nieve"
+        created_at:
+          type: string
+          format: date-time
+          description: Fecha de creación
+      required:
+        - id
+        - name
+        - created_at
+
+    CategoryCreate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Nombre de la categoría
+          examples:
+            - "Crampones y piolets"
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Descripción de la categoría
+          examples:
+            - "Equipos esenciales para escalada en hielo y nieve"
+      required:
+        - name
+
+    CategoryUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Nombre de la categoría
+          examples:
+            - "Crampones y piolets"
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Descripción de la categoría
+      required:
+        - name
+
+    # ── Equipment ─────────────────────────────
+    Equipment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identificador único del equipo
+        category_id:
+          type: string
+          format: uuid
+          description: ID de la categoría a la que pertenece
+        name:
+          type: string
+          description: Nombre del equipo
+          examples:
+            - "Crampón Petzl Lynx"
+        description:
+          type: string
+          description: Descripción general del equipo
+          examples:
+            - "Crampón técnico de 14 puntas para escalada en hielo y mixto."
+        technical_specs:
+          type: string
+          description: Ficha técnica detallada del equipo
+          examples:
+            - "Material: acero. Peso: 985 g. Puntas: 14 (monobloque frontal). Compatible con botas semi-rígidas y rígidas."
+        price_per_day:
+          type: number
+          format: double
+          description: Precio de arriendo por día (CLP)
+          examples:
+            - 8000
+        stock:
+          type: integer
+          description: Cantidad total en inventario
+          minimum: 0
+          examples:
+            - 5
+        rental_conditions:
+          type: string
+          nullable: true
+          description: Condiciones de arriendo del equipo
+          examples:
+            - "Requiere depósito de garantía. Devolución limpia y sin daños."
+        image_url:
+          type: string
+          nullable: true
+          description: URL de la imagen del equipo
+          examples:
+            - "https://storage.puntocumbre.cl/equipment/crampon-petzl-lynx.jpg"
+        is_active:
+          type: boolean
+          description: Indica si el equipo está activo en el catálogo
+          default: true
+        created_at:
+          type: string
+          format: date-time
+          description: Fecha de creación
+        updated_at:
+          type: string
+          format: date-time
+          description: Fecha de última actualización
+        category:
+          $ref: "#/components/schemas/Category"
+      required:
+        - id
+        - category_id
+        - name
+        - description
+        - technical_specs
+        - price_per_day
+        - stock
+        - is_active
+        - created_at
+        - updated_at
+
+    EquipmentSummary:
+      type: object
+      description: Resumen de equipo para listados (sin ficha técnica completa)
+      properties:
+        id:
+          type: string
+          format: uuid
+        category_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples:
+            - "Crampón Petzl Lynx"
+        description:
+          type: string
+        price_per_day:
+          type: number
+          format: double
+          examples:
+            - 8000
+        stock:
+          type: integer
+          minimum: 0
+        image_url:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        category:
+          $ref: "#/components/schemas/Category"
+      required:
+        - id
+        - category_id
+        - name
+        - description
+        - price_per_day
+        - stock
+        - is_active
+
+    EquipmentCreate:
+      type: object
+      properties:
+        category_id:
+          type: string
+          format: uuid
+          description: ID de la categoría
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Nombre del equipo
+        description:
+          type: string
+          minLength: 1
+          description: Descripción general del equipo
+        technical_specs:
+          type: string
+          minLength: 1
+          description: Ficha técnica detallada
+        price_per_day:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: Precio de arriendo por día (CLP)
+        stock:
+          type: integer
+          minimum: 0
+          description: Cantidad total en inventario
+        rental_conditions:
+          type: string
+          nullable: true
+          description: Condiciones de arriendo
+        is_active:
+          type: boolean
+          default: true
+          description: Si el equipo está activo en el catálogo
+      required:
+        - category_id
+        - name
+        - description
+        - technical_specs
+        - price_per_day
+        - stock
+
+    EquipmentUpdate:
+      type: object
+      properties:
+        category_id:
+          type: string
+          format: uuid
+          description: ID de la categoría
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Nombre del equipo
+        description:
+          type: string
+          minLength: 1
+          description: Descripción general del equipo
+        technical_specs:
+          type: string
+          minLength: 1
+          description: Ficha técnica detallada
+        price_per_day:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: Precio de arriendo por día (CLP)
+        stock:
+          type: integer
+          minimum: 0
+          description: Cantidad total en inventario
+        rental_conditions:
+          type: string
+          nullable: true
+          description: Condiciones de arriendo
+        is_active:
+          type: boolean
+          description: Si el equipo está activo en el catálogo
+      required:
+        - category_id
+        - name
+        - description
+        - technical_specs
+        - price_per_day
+        - stock
+
+    # ── Availability ──────────────────────────
+    AvailabilityResponse:
+      type: object
+      properties:
+        equipment_id:
+          type: string
+          format: uuid
+        is_available:
+          type: boolean
+          description: Si hay stock disponible para las fechas solicitadas
+        available_quantity:
+          type: integer
+          description: Cantidad disponible para las fechas indicadas
+          minimum: 0
+        total_stock:
+          type: integer
+          description: Stock total del equipo
+        pickup_date:
+          type: string
+          format: date
+        return_date:
+          type: string
+          format: date
+      required:
+        - equipment_id
+        - is_available
+        - available_quantity
+        - total_stock
+        - pickup_date
+        - return_date
+
+    # ── Quote ─────────────────────────────────
+    QuoteStatus:
+      type: string
+      enum:
+        - pendiente
+        - confirmada
+        - cancelada
+      description: |
+        Estado de la cotización:
+        - **pendiente**: Recién creada, esperando confirmación del cliente
+        - **confirmada**: El cliente confirmó la cotización → se creó reserva
+        - **cancelada**: Cotización cancelada
+
+    QuoteItemRequest:
+      type: object
+      description: Ítem de equipo incluido en la solicitud de cotización
+      properties:
+        equipment_id:
+          type: string
+          format: uuid
+          description: ID del equipo a cotizar
+        quantity:
+          type: integer
+          minimum: 1
+          description: Cantidad requerida
+          examples:
+            - 2
+      required:
+        - equipment_id
+        - quantity
+
+    QuoteItem:
+      type: object
+      description: Ítem de equipo dentro de una cotización (con precios calculados)
+      properties:
+        id:
+          type: string
+          format: uuid
+        quote_id:
+          type: string
+          format: uuid
+        equipment_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+          description: Cantidad cotizada
+        price_per_day:
+          type: number
+          format: double
+          description: Precio unitario por día al momento de la cotización (snapshot)
+        subtotal:
+          type: number
+          format: double
+          description: "Subtotal calculado: price_per_day × quantity × total_days"
+        equipment:
+          $ref: "#/components/schemas/EquipmentSummary"
+      required:
+        - id
+        - quote_id
+        - equipment_id
+        - quantity
+        - price_per_day
+        - subtotal
+
+    QuoteCreate:
+      type: object
+      description: Datos para solicitar una cotización
+      properties:
+        client_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Nombre completo del cliente
+          examples:
+            - "Juan Pérez"
+        client_email:
+          type: string
+          format: email
+          description: Correo electrónico del cliente
+          examples:
+            - "juan.perez@example.com"
+        client_phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: Teléfono de contacto del cliente
+          examples:
+            - "+56912345678"
+        pickup_date:
+          type: string
+          format: date
+          description: Fecha de retiro del equipo
+          examples:
+            - "2026-12-01"
+        return_date:
+          type: string
+          format: date
+          description: Fecha de devolución del equipo
+          examples:
+            - "2026-12-05"
+        items:
+          type: array
+          minItems: 1
+          description: Lista de equipos y cantidades a cotizar
+          items:
+            $ref: "#/components/schemas/QuoteItemRequest"
+      required:
+        - client_name
+        - client_email
+        - client_phone
+        - pickup_date
+        - return_date
+        - items
+
+    Quote:
+      type: object
+      description: Cotización generada por el sistema
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        client_email:
+          type: string
+          format: email
+        client_phone:
+          type: string
+        pickup_date:
+          type: string
+          format: date
+        return_date:
+          type: string
+          format: date
+        total_days:
+          type: integer
+          description: Número de días de arriendo (calculado automáticamente)
+          minimum: 1
+        total_price:
+          type: number
+          format: double
+          description: Precio total de la cotización (suma de subtotales)
+        status:
+          $ref: "#/components/schemas/QuoteStatus"
+        tracking_code:
+          type: string
+          description: Código único para que el cliente consulte su cotización
+          examples:
+            - "PC-2026-ABC123"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuoteItem"
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - client_name
+        - client_email
+        - client_phone
+        - pickup_date
+        - return_date
+        - total_days
+        - total_price
+        - status
+        - tracking_code
+        - items
+        - created_at
+
+    QuoteSummary:
+      type: object
+      description: Resumen de cotización para listados (sin ítems detallados)
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        client_email:
+          type: string
+          format: email
+        pickup_date:
+          type: string
+          format: date
+        return_date:
+          type: string
+          format: date
+        total_days:
+          type: integer
+        total_price:
+          type: number
+          format: double
+        status:
+          $ref: "#/components/schemas/QuoteStatus"
+        tracking_code:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - client_name
+        - client_email
+        - pickup_date
+        - return_date
+        - total_days
+        - total_price
+        - status
+        - tracking_code
+        - created_at
+
+    # ── Reservation ───────────────────────────
+    ReservationStatus:
+      type: string
+      enum:
+        - pendiente
+        - confirmada
+        - en_arriendo
+        - devuelta
+        - cancelada
+      description: |
+        Estado de la reserva:
+        - **pendiente**: Reserva creada, pendiente de confirmar por admin
+        - **confirmada**: Admin confirma la reserva
+        - **en_arriendo**: Equipo entregado al cliente
+        - **devuelta**: Equipo devuelto por el cliente
+        - **cancelada**: Reserva cancelada
+
+    Reservation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        quote_id:
+          type: string
+          format: uuid
+          description: ID de la cotización asociada (relación 1:1)
+        status:
+          $ref: "#/components/schemas/ReservationStatus"
+        admin_notes:
+          type: string
+          nullable: true
+          description: Notas internas del administrador
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        quote:
+          $ref: "#/components/schemas/Quote"
+      required:
+        - id
+        - quote_id
+        - status
+        - created_at
+        - updated_at
+
+    ReservationSummary:
+      type: object
+      description: Resumen de reserva para listados
+      properties:
+        id:
+          type: string
+          format: uuid
+        quote_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ReservationStatus"
+        admin_notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        quote:
+          $ref: "#/components/schemas/QuoteSummary"
+      required:
+        - id
+        - quote_id
+        - status
+        - created_at
+        - updated_at
+
+    ReservationStatusUpdate:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/ReservationStatus"
+        admin_notes:
+          type: string
+          nullable: true
+          description: Notas opcionales del administrador
+      required:
+        - status
+
+    # ── Repair ────────────────────────────────
+    RepairRequestStatus:
+      type: string
+      enum:
+        - recibida
+        - en_revision
+        - completada
+      description: |
+        Estado de la solicitud de reparación:
+        - **recibida**: Solicitud recién recibida
+        - **en_revision**: En proceso de revisión
+        - **completada**: Reparación completada
+
+    RepairRequestCreate:
+      type: object
+      description: Datos para enviar una solicitud de reparación
+      properties:
+        client_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Nombre completo del cliente
+          examples:
+            - "María González"
+        client_email:
+          type: string
+          format: email
+          description: Correo electrónico del cliente
+          examples:
+            - "maria.gonzalez@example.com"
+        client_phone:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: Teléfono de contacto
+          examples:
+            - "+56987654321"
+        equipment_description:
+          type: string
+          minLength: 1
+          description: Descripción del equipo que necesita reparación
+          examples:
+            - "Crampones Petzl Lynx, comprados en 2024"
+        issue_description:
+          type: string
+          minLength: 1
+          description: Descripción del problema o daño
+          examples:
+            - "Dos puntas frontales están dobladas y el sistema de fijación no cierra correctamente."
+      required:
+        - client_name
+        - client_email
+        - client_phone
+        - equipment_description
+        - issue_description
+
+    RepairRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        client_email:
+          type: string
+          format: email
+        client_phone:
+          type: string
+        equipment_description:
+          type: string
+        issue_description:
+          type: string
+        status:
+          $ref: "#/components/schemas/RepairRequestStatus"
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - client_name
+        - client_email
+        - client_phone
+        - equipment_description
+        - issue_description
+        - status
+        - created_at
+
+    RepairRequestStatusUpdate:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/RepairRequestStatus"
+      required:
+        - status
+
+    RepairServicesInfo:
+      type: object
+      description: Información estática sobre los servicios de reparación
+      properties:
+        title:
+          type: string
+          examples:
+            - "Servicios de Reparación de Equipos de Montaña"
+        description:
+          type: string
+          description: Descripción general de los servicios de reparación
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+            required:
+              - name
+              - description
+        contact_info:
+          type: string
+          description: Información de contacto para reparaciones
+      required:
+        - title
+        - description
+        - services
+
+    # ── Admin User ────────────────────────────
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Identificador único del administrador
+          examples:
+            - "f1a2b3c4-d5e6-7890-abcd-ef1234567890"
+        username:
+          type: string
+          description: Nombre de usuario del administrador
+          examples:
+            - "admin"
+        password_hash:
+          type: string
+          description: Hash de la contraseña del administrador
+        created_at:
+          type: string
+          format: date-time
+          description: Fecha de creación de la cuenta
+      required:
+        - id
+        - username
+        - password_hash
+        - created_at
+
+    # ── Admin Auth ────────────────────────────
+    AdminLoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: Nombre de usuario del administrador
+          examples:
+            - "admin"
+        password:
+          type: string
+          minLength: 1
+          description: Contraseña del administrador
+          examples:
+            - "securePassword123"
+      required:
+        - username
+        - password
+
+    AdminLoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: Token JWT para autenticación
+        token_type:
+          type: string
+          examples:
+            - "bearer"
+        expires_in:
+          type: integer
+          description: Tiempo de expiración del token en segundos
+          examples:
+            - 3600
+      required:
+        - access_token
+        - token_type
+        - expires_in
+
+    # ── Notification ──────────────────────────
+    NotificationType:
+      type: string
+      enum:
+        - nueva_cotizacion
+        - nueva_reparacion
+        - cotizacion_confirmada
+      description: |
+        Tipo de notificación:
+        - **nueva_cotizacion**: Se recibió una nueva solicitud de cotización
+        - **nueva_reparacion**: Se recibió una nueva solicitud de reparación
+        - **cotizacion_confirmada**: Un cliente confirmó su cotización
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: "#/components/schemas/NotificationType"
+        message:
+          type: string
+          description: Mensaje descriptivo de la notificación
+          examples:
+            - "Nueva cotización recibida de Juan Pérez"
+        is_read:
+          type: boolean
+          default: false
+          description: Si la notificación ha sido leída
+        reference_id:
+          type: string
+          format: uuid
+          description: ID de la entidad relacionada (cotización, reparación, etc.)
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - message
+        - is_read
+        - reference_id
+        - created_at
+
+    # ── Dashboard ─────────────────────────────
+    DashboardStats:
+      type: object
+      description: Estadísticas del panel de administración
+      properties:
+        total_reservations:
+          type: integer
+          description: Total de reservas
+        reservations_by_status:
+          type: object
+          description: Cantidad de reservas por estado
+          properties:
+            pendiente:
+              type: integer
+            confirmada:
+              type: integer
+            en_arriendo:
+              type: integer
+            devuelta:
+              type: integer
+            cancelada:
+              type: integer
+          required:
+            - pendiente
+            - confirmada
+            - en_arriendo
+            - devuelta
+            - cancelada
+        total_quotes:
+          type: integer
+          description: Total de cotizaciones
+        pending_quotes:
+          type: integer
+          description: Cotizaciones pendientes de confirmación
+        total_revenue:
+          type: number
+          format: double
+          description: Ingresos totales (reservas devueltas)
+        active_rentals:
+          type: integer
+          description: Arriendos activos actualmente
+        pending_repair_requests:
+          type: integer
+          description: Solicitudes de reparación pendientes
+        unread_notifications:
+          type: integer
+          description: Notificaciones sin leer
+      required:
+        - total_reservations
+        - reservations_by_status
+        - total_quotes
+        - pending_quotes
+        - total_revenue
+        - active_rentals
+        - pending_repair_requests
+        - unread_notifications
+
+    # ── Image Upload ──────────────────────────
+    ImageUploadResponse:
+      type: object
+      properties:
+        image_url:
+          type: string
+          description: URL pública de la imagen subida
+          examples:
+            - "https://storage.puntocumbre.cl/equipment/crampon-petzl-lynx.jpg"
+      required:
+        - image_url
+
+    # ── Pagination ────────────────────────────
+    PaginationMeta:
+      type: object
+      description: Metadatos de paginación
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          description: Página actual
+        page_size:
+          type: integer
+          minimum: 1
+          description: Cantidad de elementos por página
+        total_items:
+          type: integer
+          minimum: 0
+          description: Total de elementos
+        total_pages:
+          type: integer
+          minimum: 0
+          description: Total de páginas
+      required:
+        - page
+        - page_size
+        - total_items
+        - total_pages
+
+    # ── Paginated Responses ───────────────────
+    PaginatedEquipmentList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EquipmentSummary"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+
+    PaginatedReservationList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReservationSummary"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+
+    PaginatedQuoteList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuoteSummary"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+
+    PaginatedRepairRequestList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RepairRequest"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+
+    PaginatedNotificationList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        meta:
+          $ref: "#/components/schemas/PaginationMeta"
+      required:
+        - data
+        - meta
+
+    # ── Error Responses ───────────────────────
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Mensaje de error descriptivo
+          examples:
+            - "Recurso no encontrado"
+      required:
+        - detail
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                description: Ubicación del error en el cuerpo de la solicitud
+              msg:
+                type: string
+                description: Mensaje de error
+              type:
+                type: string
+                description: Tipo de error
+            required:
+              - loc
+              - msg
+              - type
+      required:
+        - detail
+
+    MessageResponse:
+      type: object
+      description: Respuesta simple con mensaje de confirmación
+      properties:
+        message:
+          type: string
+          examples:
+            - "Operación realizada con éxito"
+      required:
+        - message
+
+  # ──────────────────────────────────────────
+  # Reusable Parameters
+  # ──────────────────────────────────────────
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Número de página
+
+    PageSizeParam:
+      name: page_size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Cantidad de elementos por página
+
+  # ──────────────────────────────────────────
+  # Reusable Responses
+  # ──────────────────────────────────────────
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "Los datos proporcionados son inválidos"
+
+    Unauthorized:
+      description: No autenticado — token faltante o inválido
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "Token de autenticación inválido o expirado"
+
+    Forbidden:
+      description: Acceso denegado — permisos insuficientes
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "No tiene permisos para realizar esta acción"
+
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "Recurso no encontrado"
+
+    UnprocessableEntity:
+      description: Error de validación en los datos enviados
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationErrorResponse"
+
+# ══════════════════════════════════════════════
+# Paths
+# ══════════════════════════════════════════════
+paths:
+
+  # ────────────────────────────────────────────
+  # Public — Categories
+  # ────────────────────────────────────────────
+  /api/v1/categories:
+    get:
+      operationId: listCategories
+      tags:
+        - Catálogo
+      summary: Listar todas las categorías
+      description: Retorna la lista completa de categorías de equipos disponibles.
+      responses:
+        "200":
+          description: Lista de categorías
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+              example:
+                - id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  name: "Crampones y piolets"
+                  description: "Equipos esenciales para escalada en hielo y nieve"
+                  created_at: "2026-01-15T10:30:00Z"
+                - id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+                  name: "Carpas"
+                  description: "Carpas de montaña para expediciones y trekking"
+                  created_at: "2026-01-15T10:35:00Z"
+
+  /api/v1/categories/{id}:
+    get:
+      operationId: getCategoryById
+      tags:
+        - Catálogo
+      summary: Obtener categoría por ID
+      description: Retorna los detalles de una categoría específica.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la categoría
+      responses:
+        "200":
+          description: Detalle de la categoría
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ────────────────────────────────────────────
+  # Public — Equipment
+  # ────────────────────────────────────────────
+  /api/v1/equipment:
+    get:
+      operationId: listEquipment
+      tags:
+        - Catálogo
+      summary: Listar equipos del catálogo
+      description: |
+        Retorna una lista paginada de equipos activos del catálogo.
+        Permite filtrar por categoría, búsqueda por nombre, y disponibilidad.
+      parameters:
+        - name: category_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filtrar por categoría
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Búsqueda por nombre o descripción del equipo
+        - name: is_available
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filtrar solo equipos con stock disponible (stock > 0)
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Lista paginada de equipos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedEquipmentList"
+
+  /api/v1/equipment/{id}:
+    get:
+      operationId: getEquipmentById
+      tags:
+        - Catálogo
+      summary: Obtener ficha técnica del equipo
+      description: |
+        Retorna la información completa de un equipo, incluyendo su ficha técnica,
+        precio por día, condiciones de arriendo e imagen.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID del equipo
+      responses:
+        "200":
+          description: Detalle completo del equipo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Equipment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ────────────────────────────────────────────
+  # Public — Availability
+  # ────────────────────────────────────────────
+  /api/v1/equipment/{id}/availability:
+    get:
+      operationId: checkEquipmentAvailability
+      tags:
+        - Disponibilidad
+      summary: Verificar disponibilidad de un equipo
+      description: |
+        Verifica si un equipo tiene stock disponible para las fechas de retiro
+        y devolución indicadas. Considera las reservas activas en ese rango.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID del equipo
+        - name: pickup_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Fecha de retiro (YYYY-MM-DD)
+        - name: return_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Fecha de devolución (YYYY-MM-DD)
+      responses:
+        "200":
+          description: Resultado de disponibilidad
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailabilityResponse"
+              example:
+                equipment_id: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+                is_available: true
+                available_quantity: 3
+                total_stock: 5
+                pickup_date: "2026-12-01"
+                return_date: "2026-12-05"
+        "400":
+          description: Fechas inválidas (return_date anterior a pickup_date, fechas pasadas, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "La fecha de devolución debe ser posterior a la fecha de retiro"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ────────────────────────────────────────────
+  # Public — Quotes
+  # ────────────────────────────────────────────
+  /api/v1/quotes:
+    post:
+      operationId: createQuote
+      tags:
+        - Cotizaciones
+      summary: Solicitar una cotización
+      description: |
+        El cliente solicita una cotización indicando sus datos de contacto,
+        las fechas de arriendo y los equipos con sus cantidades.
+
+        El sistema calcula automáticamente:
+        - **total_days**: diferencia entre return_date y pickup_date
+        - **price_per_day** por ítem: snapshot del precio actual del equipo
+        - **subtotal** por ítem: price_per_day × quantity × total_days
+        - **total_price**: suma de todos los subtotales
+
+        Se genera un **tracking_code** único para que el cliente consulte el estado.
+        Se crea una **notificación** para el administrador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteCreate"
+            example:
+              client_name: "Juan Pérez"
+              client_email: "juan.perez@example.com"
+              client_phone: "+56912345678"
+              pickup_date: "2026-12-01"
+              return_date: "2026-12-05"
+              items:
+                - equipment_id: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+                  quantity: 2
+                - equipment_id: "d4e5f6a7-b8c9-0123-defa-234567890123"
+                  quantity: 1
+      responses:
+        "201":
+          description: Cotización creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "400":
+          description: Datos inválidos (fechas, equipos inexistentes, stock insuficiente, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Stock insuficiente para el equipo 'Crampón Petzl Lynx' en las fechas seleccionadas"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/v1/quotes/{tracking_code}:
+    get:
+      operationId: getQuoteByTrackingCode
+      tags:
+        - Cotizaciones
+      summary: Consultar cotización por código de seguimiento
+      description: |
+        El cliente consulta el detalle de su cotización usando el código de
+        seguimiento que recibió al crearla.
+      parameters:
+        - name: tracking_code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Código de seguimiento de la cotización
+          example: "PC-2026-ABC123"
+      responses:
+        "200":
+          description: Detalle de la cotización
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "404":
+          description: Cotización no encontrada con ese código
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "No se encontró una cotización con el código proporcionado"
+
+  /api/v1/quotes/{tracking_code}/confirm:
+    post:
+      operationId: confirmQuote
+      tags:
+        - Cotizaciones
+      summary: Confirmar cotización (crea reserva)
+      description: |
+        El cliente confirma su cotización. Al confirmar:
+        1. El estado de la cotización cambia a **confirmada**.
+        2. Se crea una **reserva** con estado **pendiente**.
+        3. Se genera una **notificación** para el administrador.
+
+        Solo se pueden confirmar cotizaciones en estado **pendiente**.
+      parameters:
+        - name: tracking_code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Código de seguimiento de la cotización
+      responses:
+        "201":
+          description: Reserva creada exitosamente tras confirmar la cotización
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "400":
+          description: La cotización no puede ser confirmada (ya confirmada, cancelada, stock insuficiente, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "La cotización ya fue confirmada o cancelada"
+        "404":
+          description: Cotización no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "No se encontró una cotización con el código proporcionado"
+
+  # ────────────────────────────────────────────
+  # Public — Reservations (client view)
+  # ────────────────────────────────────────────
+  /api/v1/reservations:
+    get:
+      operationId: listClientReservations
+      tags:
+        - Reservas
+      summary: Listar reservas del cliente por email
+      description: |
+        El cliente consulta todas sus reservas (actuales e históricas) usando
+        su correo electrónico.
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+          description: Correo electrónico del cliente
+      responses:
+        "200":
+          description: Lista de reservas del cliente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReservationSummary"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/v1/reservations/{tracking_code}:
+    get:
+      operationId: getClientReservation
+      tags:
+        - Reservas
+      summary: Obtener detalle de reserva por código de seguimiento
+      description: |
+        El cliente consulta el detalle completo de una reserva usando el código
+        de seguimiento de la cotización asociada.
+      parameters:
+        - name: tracking_code
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Código de seguimiento (de la cotización asociada)
+      responses:
+        "200":
+          description: Detalle de la reserva
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "404":
+          description: Reserva no encontrada para ese código de seguimiento
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "No se encontró una reserva con el código proporcionado"
+
+  # ────────────────────────────────────────────
+  # Public — Repair Services
+  # ────────────────────────────────────────────
+  /api/v1/repair-services:
+    get:
+      operationId: getRepairServicesInfo
+      tags:
+        - Reparaciones
+      summary: Obtener información de servicios de reparación
+      description: |
+        Retorna la información estática sobre los servicios de reparación
+        de equipos de montaña ofrecidos por Punto Cumbre.
+      responses:
+        "200":
+          description: Información de servicios de reparación
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepairServicesInfo"
+              example:
+                title: "Servicios de Reparación de Equipos de Montaña"
+                description: "En Punto Cumbre ofrecemos servicios profesionales de reparación y mantención para tus equipos de montaña."
+                services:
+                  - name: "Reparación de crampones"
+                    description: "Enderezado de puntas, cambio de fijaciones y piezas dañadas."
+                  - name: "Reparación de carpas"
+                    description: "Parches, cambio de varillas y reparación de cierres."
+                  - name: "Mantención general"
+                    description: "Revisión completa y mantención preventiva de equipos."
+                contact_info: "Envíanos tu solicitud a través del formulario o escríbenos a reparaciones@puntocumbre.cl"
+
+  /api/v1/repair-requests:
+    post:
+      operationId: createRepairRequest
+      tags:
+        - Reparaciones
+      summary: Enviar solicitud de reparación
+      description: |
+        El cliente envía una solicitud de reparación indicando el equipo y
+        el problema. Se genera una **notificación** para el administrador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepairRequestCreate"
+      responses:
+        "201":
+          description: Solicitud de reparación creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepairRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  # ────────────────────────────────────────────
+  # Admin — Auth
+  # ────────────────────────────────────────────
+  /api/v1/admin/login:
+    post:
+      operationId: adminLogin
+      tags:
+        - "Admin: Autenticación"
+      summary: Iniciar sesión de administrador
+      description: |
+        Autentica al administrador con usuario y contraseña.
+        Retorna un token JWT para acceder a los endpoints protegidos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminLoginRequest"
+      responses:
+        "200":
+          description: Autenticación exitosa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLoginResponse"
+              example:
+                access_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                token_type: "bearer"
+                expires_in: 3600
+        "401":
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Usuario o contraseña incorrectos"
+
+  /api/v1/admin/logout:
+    post:
+      operationId: adminLogout
+      tags:
+        - "Admin: Autenticación"
+      summary: Cerrar sesión de administrador
+      description: Invalida el token JWT actual del administrador.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Sesión cerrada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              example:
+                message: "Sesión cerrada exitosamente"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ────────────────────────────────────────────
+  # Admin — Equipment Management
+  # ────────────────────────────────────────────
+  /api/v1/admin/equipment:
+    post:
+      operationId: adminCreateEquipment
+      tags:
+        - "Admin: Equipos"
+      summary: Crear nuevo equipo
+      description: El administrador agrega un nuevo equipo al catálogo.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipmentCreate"
+      responses:
+        "201":
+          description: Equipo creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Equipment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/v1/admin/equipment/{id}:
+    put:
+      operationId: adminUpdateEquipment
+      tags:
+        - "Admin: Equipos"
+      summary: Actualizar equipo
+      description: El administrador actualiza la información de un equipo existente.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID del equipo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EquipmentUpdate"
+      responses:
+        "200":
+          description: Equipo actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Equipment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+    delete:
+      operationId: adminDeleteEquipment
+      tags:
+        - "Admin: Equipos"
+      summary: Eliminar/desactivar equipo
+      description: |
+        Desactiva un equipo del catálogo (soft delete: establece is_active = false).
+        No elimina físicamente el registro para mantener integridad referencial
+        con cotizaciones y reservas existentes.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID del equipo
+      responses:
+        "200":
+          description: Equipo desactivado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              example:
+                message: "Equipo desactivado exitosamente"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/equipment/{id}/upload-image:
+    post:
+      operationId: adminUploadEquipmentImage
+      tags:
+        - "Admin: Equipos"
+      summary: Subir imagen de equipo
+      description: |
+        El administrador sube una imagen desde su computador para un equipo.
+        La imagen se almacena y se actualiza el campo image_url del equipo.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID del equipo
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Archivo de imagen (JPEG, PNG, WebP; máx. 5 MB)
+              required:
+                - image
+      responses:
+        "200":
+          description: Imagen subida exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageUploadResponse"
+        "400":
+          description: Archivo inválido (formato no soportado, tamaño excedido, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Formato de imagen no soportado. Use JPEG, PNG o WebP."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ────────────────────────────────────────────
+  # Admin — Category Management
+  # ────────────────────────────────────────────
+  /api/v1/admin/categories:
+    post:
+      operationId: adminCreateCategory
+      tags:
+        - "Admin: Categorías"
+      summary: Crear nueva categoría
+      description: El administrador crea una nueva categoría de equipos.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryCreate"
+      responses:
+        "201":
+          description: Categoría creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "400":
+          description: Datos inválidos o categoría duplicada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Ya existe una categoría con ese nombre"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/v1/admin/categories/{id}:
+    put:
+      operationId: adminUpdateCategory
+      tags:
+        - "Admin: Categorías"
+      summary: Actualizar categoría
+      description: El administrador actualiza una categoría existente.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la categoría
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryUpdate"
+      responses:
+        "200":
+          description: Categoría actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "400":
+          description: Datos inválidos o nombre duplicado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Ya existe una categoría con ese nombre"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+    delete:
+      operationId: adminDeleteCategory
+      tags:
+        - "Admin: Categorías"
+      summary: Eliminar categoría
+      description: |
+        Elimina una categoría. Solo se puede eliminar si no tiene equipos asociados.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la categoría
+      responses:
+        "200":
+          description: Categoría eliminada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              example:
+                message: "Categoría eliminada exitosamente"
+        "400":
+          description: No se puede eliminar porque tiene equipos asociados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "No se puede eliminar la categoría porque tiene equipos asociados"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ────────────────────────────────────────────
+  # Admin — Reservation Management
+  # ────────────────────────────────────────────
+  /api/v1/admin/reservations:
+    get:
+      operationId: adminListReservations
+      tags:
+        - "Admin: Reservas"
+      summary: Listar todas las reservas
+      description: |
+        Retorna una lista paginada de todas las reservas.
+        Permite filtrar por estado y rango de fechas.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ReservationStatus"
+          description: Filtrar por estado de la reserva
+        - name: date_from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Fecha inicio del rango (fecha de retiro)
+        - name: date_to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Fecha fin del rango (fecha de retiro)
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Lista paginada de reservas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedReservationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/admin/reservations/{id}:
+    get:
+      operationId: adminGetReservation
+      tags:
+        - "Admin: Reservas"
+      summary: Obtener detalle de una reserva
+      description: Retorna el detalle completo de una reserva, incluyendo la cotización y sus ítems.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la reserva
+      responses:
+        "200":
+          description: Detalle de la reserva
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/reservations/{id}/status:
+    patch:
+      operationId: adminUpdateReservationStatus
+      tags:
+        - "Admin: Reservas"
+      summary: Actualizar estado de una reserva
+      description: |
+        El administrador actualiza el estado de una reserva.
+
+        Transiciones válidas:
+        - **pendiente** → confirmada, cancelada
+        - **confirmada** → en_arriendo, cancelada
+        - **en_arriendo** → devuelta, cancelada
+        - **devuelta** → (estado final)
+        - **cancelada** → (estado final)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la reserva
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReservationStatusUpdate"
+            example:
+              status: "confirmada"
+              admin_notes: "Cliente confirma retiro para el 1 de diciembre a las 10:00"
+      responses:
+        "200":
+          description: Estado actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Reservation"
+        "400":
+          description: Transición de estado inválida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "No se puede cambiar el estado de 'devuelta' a 'pendiente'"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/dashboard:
+    get:
+      operationId: adminGetDashboard
+      tags:
+        - "Admin: Reservas"
+      summary: Obtener estadísticas del dashboard
+      description: |
+        Retorna las estadísticas generales del panel de administración:
+        total de reservas por estado, ingresos, arriendos activos,
+        cotizaciones pendientes, solicitudes de reparación y notificaciones sin leer.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Estadísticas del dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+              example:
+                total_reservations: 45
+                reservations_by_status:
+                  pendiente: 5
+                  confirmada: 8
+                  en_arriendo: 12
+                  devuelta: 18
+                  cancelada: 2
+                total_quotes: 60
+                pending_quotes: 7
+                total_revenue: 1250000
+                active_rentals: 12
+                pending_repair_requests: 3
+                unread_notifications: 4
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ────────────────────────────────────────────
+  # Admin — Quotes Management
+  # ────────────────────────────────────────────
+  /api/v1/admin/quotes:
+    get:
+      operationId: adminListQuotes
+      tags:
+        - "Admin: Cotizaciones"
+      summary: Listar todas las cotizaciones
+      description: Retorna una lista paginada de todas las cotizaciones recibidas.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/QuoteStatus"
+          description: Filtrar por estado de la cotización
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Lista paginada de cotizaciones
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedQuoteList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/admin/quotes/{id}:
+    get:
+      operationId: adminGetQuote
+      tags:
+        - "Admin: Cotizaciones"
+      summary: Obtener detalle de una cotización
+      description: Retorna el detalle completo de una cotización, incluyendo los ítems y equipos.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la cotización
+      responses:
+        "200":
+          description: Detalle de la cotización
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ────────────────────────────────────────────
+  # Admin — Notifications
+  # ────────────────────────────────────────────
+  /api/v1/admin/notifications:
+    get:
+      operationId: adminListNotifications
+      tags:
+        - "Admin: Notificaciones"
+      summary: Listar notificaciones
+      description: Retorna una lista paginada de notificaciones del administrador.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: is_read
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filtrar por estado de lectura (true = leídas, false = no leídas)
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Lista paginada de notificaciones
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedNotificationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/admin/notifications/{id}/read:
+    patch:
+      operationId: adminMarkNotificationRead
+      tags:
+        - "Admin: Notificaciones"
+      summary: Marcar notificación como leída
+      description: Marca una notificación específica como leída.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la notificación
+      responses:
+        "200":
+          description: Notificación marcada como leída
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/notifications/read-all:
+    patch:
+      operationId: adminMarkAllNotificationsRead
+      tags:
+        - "Admin: Notificaciones"
+      summary: Marcar todas las notificaciones como leídas
+      description: Marca todas las notificaciones no leídas como leídas.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Todas las notificaciones marcadas como leídas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+              example:
+                message: "Todas las notificaciones han sido marcadas como leídas"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ────────────────────────────────────────────
+  # Admin — Repair Requests
+  # ────────────────────────────────────────────
+  /api/v1/admin/repair-requests:
+    get:
+      operationId: adminListRepairRequests
+      tags:
+        - "Admin: Reparaciones"
+      summary: Listar solicitudes de reparación
+      description: Retorna una lista paginada de todas las solicitudes de reparación.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/RepairRequestStatus"
+          description: Filtrar por estado de la solicitud
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Lista paginada de solicitudes de reparación
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedRepairRequestList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/admin/repair-requests/{id}/status:
+    patch:
+      operationId: adminUpdateRepairRequestStatus
+      tags:
+        - "Admin: Reparaciones"
+      summary: Actualizar estado de solicitud de reparación
+      description: |
+        El administrador actualiza el estado de una solicitud de reparación.
+
+        Transiciones válidas:
+        - **recibida** → en_revision
+        - **en_revision** → completada
+        - **completada** → (estado final)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID de la solicitud de reparación
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepairRequestStatusUpdate"
+      responses:
+        "200":
+          description: Estado actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepairRequest"
+        "400":
+          description: Transición de estado inválida
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "No se puede cambiar el estado de 'completada' a 'recibida'"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
