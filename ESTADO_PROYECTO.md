@@ -142,8 +142,8 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 0** | Análisis de requerimientos funcionales y no funcionales | ✅ Completada |
 | **Fase 1** | Especificaciones Gherkin (BDD) y Contrato OpenAPI 3.1 (SDD) | ✅ Completada |
 | **Fase 2** | Scaffolding Backend FastAPI (Arquitectura limpia + Green Software) | ✅ Completada |
-| **Fase 3** | Setup de Base de Datos Supabase (Tablas DDL / Migraciones iniciales) | ⏳ Siguiente paso |
-| **Fase 4** | Implementación de Modelos SQLAlchemy y Schemas Pydantic v2 | ⏸️ Pendiente |
+| **Fase 3** | Setup de Base de Datos Supabase (DDL + Seed + Índices Green) | ✅ Completada |
+| **Fase 4** | Implementación de Modelos SQLAlchemy y Schemas Pydantic v2 | ⏳ Siguiente paso |
 | **Fase 5** | Implementación de Endpoints y Servicios FastAPI (según OpenAPI) | ⏸️ Pendiente |
 | **Fase 6** | Frontend Next.js (Desarrollo independiente a cargo de tu compañera) | 👩‍💻 En paralelo |
 | **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
