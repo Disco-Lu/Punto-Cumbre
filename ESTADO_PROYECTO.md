@@ -119,11 +119,19 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 
 ---
 
-## 🚦 5. Punto Exacto de Detención
+## 🚦 5. Estado Actual del Proyecto
 
-El proyecto se encuentra al **100% en la fase de especificación y diseño del contrato**.  
-**Próxima acción cuando decidas continuar:**
-Comenzar la **Fase 2 (Estructuración de carpetas y dependencias de Frontend y Backend)** y la **Fase 3 (Generación automática de tipos TypeScript a partir de `specs/openapi.yaml`)**.
+- **Fase 0 (Análisis):** ✅ Completada al 100%.
+- **Fase 1 (Especificación SDD):** ✅ Completada al 100% (Contrato OpenAPI 3.1.0 corregido con `AdminUser` + 88 escenarios BDD Gherkin).
+- **Fase 2 (Scaffolding Backend FastAPI + Green Software):** ✅ **Completada**.
+  - Estructura limpia y pragmática creada en `backend/`.
+  - Servidor FastAPI con ciclo de vida asíncrono (`lifespan`) y respuesta ultrarrápida `orjson`.
+  - Configuración centralizada con `@lru_cache` (cero I/O redundante a disco).
+  - Motor de base de datos SQLAlchemy 2.0 asíncrono con *Connection Pooling* estricto para Supabase.
+  - Endpoint de diagnóstico y salud operativo en `GET /api/v1/health`.
+  - Entorno listo para despliegue local o con contenedor `Dockerfile` (Python 3.12-slim) y `docker-compose.yml`.
+  - Instrucciones documentadas para el Frontend en `backend/README.md`.
+- **Frontend (Next.js):** 👩‍💻 Reservado y a cargo de tu compañera de equipo (utilizará `specs/openapi.yaml` para autogenerar tipos TypeScript).
 
 ---
 
@@ -133,9 +141,10 @@ Comenzar la **Fase 2 (Estructuración de carpetas y dependencias de Frontend y B
 | :--- | :--- | :---: |
 | **Fase 0** | Análisis de requerimientos funcionales y no funcionales | ✅ Completada |
 | **Fase 1** | Especificaciones Gherkin (BDD) y Contrato OpenAPI 3.1 (SDD) | ✅ Completada |
-| **Fase 2** | Scaffolding de proyectos (Next.js + FastAPI) | ⏸️ En pausa (Siguiente paso) |
-| **Fase 3** | Generación de tipos TypeScript vía `openapi-typescript` | ⏸️ En pausa |
-| **Fase 4** | Setup de base de datos Supabase (DDL / Migraciones SQL) | ⏸️ En pausa |
-| **Fase 5** | Implementación Backend FastAPI (routers, schemas, DB) | ⏸️ En pausa |
-| **Fase 6** | Implementación Frontend Next.js (UI, hooks, consumo tipado) | ⏸️ En pausa |
-| **Fase 7** | Pruebas de integración, validación BDD y despliegue | ⏸️ En pausa |
+| **Fase 2** | Scaffolding Backend FastAPI (Arquitectura limpia + Green Software) | ✅ Completada |
+| **Fase 3** | Setup de Base de Datos Supabase (Tablas DDL / Migraciones iniciales) | ⏳ Siguiente paso |
+| **Fase 4** | Implementación de Modelos SQLAlchemy y Schemas Pydantic v2 | ⏸️ Pendiente |
+| **Fase 5** | Implementación de Endpoints y Servicios FastAPI (según OpenAPI) | ⏸️ Pendiente |
+| **Fase 6** | Frontend Next.js (Desarrollo independiente a cargo de tu compañera) | 👩‍💻 En paralelo |
+| **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
+
