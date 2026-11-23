@@ -131,6 +131,11 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
   - Endpoint de diagnóstico y salud operativo en `GET /api/v1/health`.
   - Entorno listo para despliegue local o con contenedor `Dockerfile` (Python 3.12-slim) y `docker-compose.yml`.
   - Instrucciones documentadas para el Frontend en `backend/README.md`.
+- **Fase 3 (Setup Base de Datos Supabase):** ✅ **Completada**.
+  - Scripts DDL (`schema.sql`) y datos semilla (`seed.sql`) ejecutados en Supabase bajo el modelo ER definido (9 tablas relacionales con PKs seriales e índices Green Software).
+- **Fase 4 (Modelos ORM SQLAlchemy 2.0 y Schemas Pydantic v2):** ✅ **Completada**.
+  - Mapeo 1:1 de las 9 entidades de la base de datos en `backend/app/models/`.
+  - Esquemas de validación y DTOs (Create, Update, Response) construidos en `backend/app/schemas/` con validación Rust-backed (Pydantic v2) y `from_attributes = True`.
 - **Frontend (Next.js):** 👩‍💻 Reservado y a cargo de tu compañera de equipo (utilizará `specs/openapi.yaml` para autogenerar tipos TypeScript).
 
 ---
@@ -143,8 +148,8 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 1** | Especificaciones Gherkin (BDD) y Contrato OpenAPI 3.1 (SDD) | ✅ Completada |
 | **Fase 2** | Scaffolding Backend FastAPI (Arquitectura limpia + Green Software) | ✅ Completada |
 | **Fase 3** | Setup de Base de Datos Supabase (DDL + Seed + Índices Green) | ✅ Completada |
-| **Fase 4** | Implementación de Modelos SQLAlchemy y Schemas Pydantic v2 | ⏳ Siguiente paso |
-| **Fase 5** | Implementación de Endpoints y Servicios FastAPI (según OpenAPI) | ⏸️ Pendiente |
+| **Fase 4** | Implementación de Modelos SQLAlchemy y Schemas Pydantic v2 | ✅ Completada |
+| **Fase 5** | Implementación de Endpoints y Servicios FastAPI (según OpenAPI) | ⏳ Siguiente paso |
 | **Fase 6** | Frontend Next.js (Desarrollo independiente a cargo de tu compañera) | 👩‍💻 En paralelo |
 | **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
 
