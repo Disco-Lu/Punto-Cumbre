@@ -151,7 +151,17 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
     - `admin/pagos.py`: Registro de pagos y confirmación de arriendos.
     - `admin/dashboard.py`: KPIs en tiempo real y consolidación de ingresos diarios (RF 009).
   - **Ensamblaje central en `main.py`:** Todos los routers registrados bajo el prefijo `/api/v1` con serialización ultrarrápida `orjson`.
-- **Frontend (Next.js):** 👩‍💻 Reservado y a cargo de tu compañera de equipo (utilizará `specs/openapi.yaml` para autogenerar tipos TypeScript).
+- **Fase 6.1 (Capa de Cliente API y Configuración Frontend):** ✅ **Completada**.
+  - Configuración de entorno con `front/.env` y `front/.env.example` apuntando a `http://localhost:8000/api/v1`.
+  - Definición de tipos TypeScript sincronizados con los esquemas del backend en `front/src/api/types.ts`.
+  - Creación del cliente HTTP modular `front/src/api/client.ts` con manejo automático de Bearer Token JWT y extracción de errores.
+  - Implementación de servicios de consumo por dominio:
+    - `equipos.ts`: Catálogo de equipos, detalle y verificación de disponibilidad de stock.
+    - `cotizaciones.ts`: Solicitud y consulta de cotizaciones.
+    - `reservas.ts`: Consulta de historial de reservas por correo.
+    - `admin.ts`: Login administrativo, KPIs de dashboard, gestión de reservas y CRUD de inventario.
+  - Verificación exitosa de compilación Vite + TypeScript sin errores.
+- **Frontend (React 19 + TypeScript + Vite):** Ubicado en `front/`.
 
 ---
 
@@ -165,6 +175,10 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 3** | Setup de Base de Datos Supabase (DDL + Seed + Índices Green) | ✅ Completada |
 | **Fase 4** | Implementación de Modelos SQLAlchemy y Schemas Pydantic v2 | ✅ Completada |
 | **Fase 5** | Implementación de Endpoints y Servicios FastAPI (según OpenAPI) | ✅ Completada |
-| **Fase 6** | Frontend Next.js (Desarrollo independiente a cargo de tu compañera) | 👩‍💻 En paralelo |
-| **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏳ Siguiente paso |
+| **Fase 6.1** | Capa de Cliente API y Tipos TypeScript en Frontend | ✅ Completada |
+| **Fase 6.2** | Integración de Vista Pública (Catálogo y Cotizaciones reales) | ⏳ Siguiente paso |
+| **Fase 6.3** | Integración de Autenticación Administrativa (JWT) | ⏸️ Pendiente |
+| **Fase 6.4** | Integración del Panel Admin en Tiempo Real (Dashboard y CRUD) | ⏸️ Pendiente |
+| **Fase 6.5** | Verificación E2E de Flujo Completo (Cliente ➔ Admin ➔ DB) | ⏸️ Pendiente |
+| **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
 
