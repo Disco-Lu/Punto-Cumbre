@@ -14,7 +14,21 @@ from fastapi.responses import ORJSONResponse
 
 from app.config import settings
 from app.database import close_db_connection
-from app.routers import health
+from app.routers import (
+    categorias,
+    cotizaciones,
+    equipos,
+    health,
+    reservas,
+)
+from app.routers.admin import (
+    auth as admin_auth,
+    categorias as admin_categorias,
+    dashboard as admin_dashboard,
+    equipos as admin_equipos,
+    pagos as admin_pagos,
+    reservas as admin_reservas,
+)
 
 
 @asynccontextmanager
@@ -66,5 +80,17 @@ async def root():
     }
 
 
-# Include modular routers under /api/v1
+# ── Rutas Públicas ────────────────────────────────────────────────────────────
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(categorias.router, prefix="/api/v1")
+app.include_router(equipos.router, prefix="/api/v1")
+app.include_router(cotizaciones.router, prefix="/api/v1")
+app.include_router(reservas.router, prefix="/api/v1")
+
+# ── Rutas de Administración (Protegidas) ──────────────────────────────────────
+app.include_router(admin_auth.router, prefix="/api/v1")
+app.include_router(admin_categorias.router, prefix="/api/v1")
+app.include_router(admin_equipos.router, prefix="/api/v1")
+app.include_router(admin_reservas.router, prefix="/api/v1")
+app.include_router(admin_pagos.router, prefix="/api/v1")
+app.include_router(admin_dashboard.router, prefix="/api/v1")

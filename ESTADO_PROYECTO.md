@@ -136,12 +136,21 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 - **Fase 4 (Modelos ORM SQLAlchemy 2.0 y Schemas Pydantic v2):** ✅ **Completada**.
   - Mapeo 1:1 de las 9 entidades de la base de datos en `backend/app/models/`.
   - Esquemas de validación y DTOs (Create, Update, Response) construidos en `backend/app/schemas/` con validación Rust-backed (Pydantic v2) y `from_attributes = True`.
-- **Fase 5.1 (Servicios de Lógica de Negocio y Auth JWT):** ✅ **Completada**.
-  - `app/services/auth.py`: Hashing bcrypt, generación y decodificación de tokens JWT.
-  - `app/dependencies.py`: Inyección de dependencias para validar el Bearer JWT contra el Administrador en BD.
-  - `app/services/disponibilidad.py`: Cálculo de stock disponible entre fechas mediante consultas agregadas SQL (Green Software: 0 carga innecesaria en memoria).
-  - `app/services/cotizacion.py`: Orquestación atómica de cotizaciones (Cliente + Reserva + Detalles + Cotización + cálculo de precios).
-  - `app/services/dashboard.py`: Métricas consolidadas del panel de arriendos e ingresos diarios con agregaciones nativas (`GROUP BY`, `COUNT`, `SUM`).
+- **Fase 5 (Servicios de Lógica y Routers FastAPI):** ✅ **Completada**.
+  - **Servicios:** `auth.py`, `disponibilidad.py`, `cotizacion.py`, `dashboard.py`.
+  - **Routers Públicos:**
+    - `categorias.py`: Listado y detalle de categorías de equipamiento (HU01).
+    - `equipos.py`: Catálogo filtrable por categoría o texto, ficha técnica y disponibilidad por fechas (HU01, HU02, HU03).
+    - `cotizaciones.py`: Solicitud y cálculo automático de cotizaciones con resumen (HU04, HU05).
+    - `reservas.py`: Consulta de reservas e historial por correo del cliente (HU12).
+  - **Routers Administrativos (Ruta oculta protegida por JWT):**
+    - `admin/auth.py`: Login administrativo con emisión de Bearer Token JWT y verificación de sesión (RNF 002).
+    - `admin/categorias.py`: CRUD completo de categorías con verificación de integridad referencial.
+    - `admin/equipos.py`: CRUD de equipos y gestión de stock (RF 008, HU07, HU09).
+    - `admin/reservas.py`: Listado de reservas con filtro y transición estricta de estados (`pendiente` ➔ `confirmada` ➔ `en_arriendo` ➔ `devuelta` / `cancelada`) (HU10).
+    - `admin/pagos.py`: Registro de pagos y confirmación de arriendos.
+    - `admin/dashboard.py`: KPIs en tiempo real y consolidación de ingresos diarios (RF 009).
+  - **Ensamblaje central en `main.py`:** Todos los routers registrados bajo el prefijo `/api/v1` con serialización ultrarrápida `orjson`.
 - **Frontend (Next.js):** 👩‍💻 Reservado y a cargo de tu compañera de equipo (utilizará `specs/openapi.yaml` para autogenerar tipos TypeScript).
 
 ---
@@ -155,8 +164,7 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 2** | Scaffolding Backend FastAPI (Arquitectura limpia + Green Software) | ✅ Completada |
 | **Fase 3** | Setup de Base de Datos Supabase (DDL + Seed + Índices Green) | ✅ Completada |
 | **Fase 4** | Implementación de Modelos SQLAlchemy y Schemas Pydantic v2 | ✅ Completada |
-| **Fase 5.1** | Servicios de Negocio (Auth, Disponibilidad, Cotizaciones, Dashboard) | ✅ Completada |
-| **Fase 5.2** | Implementación de Routers Públicos y Administrativos en FastAPI | ⏳ Siguiente paso |
+| **Fase 5** | Implementación de Endpoints y Servicios FastAPI (según OpenAPI) | ✅ Completada |
 | **Fase 6** | Frontend Next.js (Desarrollo independiente a cargo de tu compañera) | 👩‍💻 En paralelo |
-| **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
+| **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏳ Siguiente paso |
 

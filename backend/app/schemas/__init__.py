@@ -31,6 +31,8 @@ from app.schemas.cotizacion import (
     CotizacionCreate,
     CotizacionStatusUpdate,
     CotizacionResponse,
+    SolicitudCotizacionRequest,
+    ResumenCotizacionResponse,
 )
 from app.schemas.pago import PagoCreate, PagoResponse
 from app.schemas.ingreso_diario import IngresoDiarioCreate, IngresoDiarioResponse
@@ -62,6 +64,8 @@ __all__ = [
     "CotizacionCreate",
     "CotizacionStatusUpdate",
     "CotizacionResponse",
+    "SolicitudCotizacionRequest",
+    "ResumenCotizacionResponse",
     "PagoCreate",
     "PagoResponse",
     "IngresoDiarioCreate",
