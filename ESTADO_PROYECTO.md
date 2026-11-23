@@ -136,6 +136,12 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 - **Fase 4 (Modelos ORM SQLAlchemy 2.0 y Schemas Pydantic v2):** ✅ **Completada**.
   - Mapeo 1:1 de las 9 entidades de la base de datos en `backend/app/models/`.
   - Esquemas de validación y DTOs (Create, Update, Response) construidos en `backend/app/schemas/` con validación Rust-backed (Pydantic v2) y `from_attributes = True`.
+- **Fase 5.1 (Servicios de Lógica de Negocio y Auth JWT):** ✅ **Completada**.
+  - `app/services/auth.py`: Hashing bcrypt, generación y decodificación de tokens JWT.
+  - `app/dependencies.py`: Inyección de dependencias para validar el Bearer JWT contra el Administrador en BD.
+  - `app/services/disponibilidad.py`: Cálculo de stock disponible entre fechas mediante consultas agregadas SQL (Green Software: 0 carga innecesaria en memoria).
+  - `app/services/cotizacion.py`: Orquestación atómica de cotizaciones (Cliente + Reserva + Detalles + Cotización + cálculo de precios).
+  - `app/services/dashboard.py`: Métricas consolidadas del panel de arriendos e ingresos diarios con agregaciones nativas (`GROUP BY`, `COUNT`, `SUM`).
 - **Frontend (Next.js):** 👩‍💻 Reservado y a cargo de tu compañera de equipo (utilizará `specs/openapi.yaml` para autogenerar tipos TypeScript).
 
 ---
@@ -149,7 +155,8 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 2** | Scaffolding Backend FastAPI (Arquitectura limpia + Green Software) | ✅ Completada |
 | **Fase 3** | Setup de Base de Datos Supabase (DDL + Seed + Índices Green) | ✅ Completada |
 | **Fase 4** | Implementación de Modelos SQLAlchemy y Schemas Pydantic v2 | ✅ Completada |
-| **Fase 5** | Implementación de Endpoints y Servicios FastAPI (según OpenAPI) | ⏳ Siguiente paso |
+| **Fase 5.1** | Servicios de Negocio (Auth, Disponibilidad, Cotizaciones, Dashboard) | ✅ Completada |
+| **Fase 5.2** | Implementación de Routers Públicos y Administrativos en FastAPI | ⏳ Siguiente paso |
 | **Fase 6** | Frontend Next.js (Desarrollo independiente a cargo de tu compañera) | 👩‍💻 En paralelo |
 | **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
 
