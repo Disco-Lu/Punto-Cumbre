@@ -3,8 +3,13 @@ import logoImg from "@/imports/punto-cumbre-logo.png"
 import {
   ApiClientError,
   checkDisponibilidad,
+  getAdminProfile,
   getEquipos,
+  isAuthenticated,
+  loginAdmin,
+  logoutAdmin,
   solicitarCotizacion,
+  type AdminProfile,
   type DisponibilidadResponse,
   type Equipo,
 } from "@/api"
@@ -96,9 +101,6 @@ const currency = new Intl.NumberFormat("es-CL", {
   currency: "CLP",
   maximumFractionDigits: 0,
 })
-
-const ADMIN_EMAIL = "admin@puntocumbre.cl"
-const ADMIN_PASSWORD = "cumbre2026"
 
 const formatDate = (date: string) =>
   new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short" }).format(
@@ -347,30 +349,47 @@ function AdminLogin({
   onSuccess,
 }: {
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (profile: AdminProfile) => void
 }) {
   const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
 
-  const submitLogin = (event: FormEvent<HTMLFormElement>) => {
+  const submitLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (loading) return
+
     const formData = new FormData(event.currentTarget)
-    const email = String(formData.get("email")).trim().toLowerCase()
+    const username = String(formData.get("username")).trim()
     const password = String(formData.get("password"))
 
-    if (email !== ADMIN_EMAIL || password !== ADMIN_PASSWORD) {
-      setError("El correo o la contraseña no son correctos.")
+    if (!username || !password) {
+      setError("Ingresa tu usuario y contraseña.")
       return
     }
 
     setError("")
-    onSuccess()
+    setLoading(true)
+    try {
+      await loginAdmin({ username, password })
+      const profile = await getAdminProfile()
+      onSuccess(profile)
+    } catch (err: unknown) {
+      logoutAdmin()
+      setError(
+        err instanceof ApiClientError
+          ? err.detail
+          : "No pudimos conectar con el servidor de autenticación.",
+      )
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate/90 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose()
+        if (event.currentTarget === event.target && !loading) onClose()
       }}
     >
       <div className="my-8 w-full max-w-md bg-white shadow-2xl">
@@ -378,6 +397,7 @@ function AdminLogin({
           <button
             className="absolute right-4 top-4 p-2 text-white/45 transition-colors hover:text-white"
             onClick={onClose}
+            disabled={loading}
             aria-label="Cerrar acceso administrativo"
           >
             <Icon name="close" />
@@ -398,16 +418,17 @@ function AdminLogin({
 
         <form onSubmit={submitLogin} className="space-y-5 p-7">
           <label className="block text-xs font-bold uppercase tracking-wider text-slate/55">
-            Correo electrónico
+            Usuario
             <input
               required
               autoFocus
-              name="email"
-              type="email"
+              name="username"
+              type="text"
               autoComplete="username"
-              placeholder="administrador@correo.cl"
+              placeholder="admin"
+              disabled={loading}
               onChange={() => setError("")}
-              className="mt-2 h-12 w-full border border-slate/15 bg-snow px-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange"
+              className="mt-2 h-12 w-full border border-slate/15 bg-snow px-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange disabled:opacity-60"
             />
           </label>
           <label className="block text-xs font-bold uppercase tracking-wider text-slate/55">
@@ -418,8 +439,9 @@ function AdminLogin({
               type="password"
               autoComplete="current-password"
               placeholder="Ingresa tu contraseña"
+              disabled={loading}
               onChange={() => setError("")}
-              className="mt-2 h-12 w-full border border-slate/15 bg-snow px-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange"
+              className="mt-2 h-12 w-full border border-slate/15 bg-snow px-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange disabled:opacity-60"
             />
           </label>
 
@@ -432,8 +454,13 @@ function AdminLogin({
             </div>
           )}
 
-          <Button type="submit" className="w-full">
-            Ingresar al panel <Icon name="arrow" />
+          <Button
+            type="submit"
+            disabled={loading}
+            className="w-full disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading ? "Verificando credenciales..." : "Ingresar al panel"}{" "}
+            <Icon name="arrow" />
           </Button>
           <p className="text-center text-[11px] leading-relaxed text-slate/40">
             Acceso exclusivo para el equipo de Punto Cumbre Outdoor.
@@ -604,17 +631,21 @@ function ProductEditor({
 }
 
 function AdminView({
+  adminUser,
   requests,
   products,
   onExit,
+  onLogout,
   onStatusChange,
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
 }: {
+  adminUser: AdminProfile
   requests: RentalRequest[]
   products: RentalItem[]
   onExit: () => void
+  onLogout: () => void
   onStatusChange: (id: string, status: RequestStatus) => void
   onAddProduct: (product: RentalItem) => void
   onUpdateProduct: (index: number, product: RentalItem) => void
@@ -671,12 +702,20 @@ function AdminView({
             ))}
           </nav>
         </div>
-        <button
-          onClick={onExit}
-          className="mt-8 flex min-h-12 w-full items-center gap-3 border-t border-white/10 px-4 pt-6 text-sm font-semibold text-white/55 transition-colors hover:text-white lg:mt-auto"
-        >
-          <Icon name="logout" className="h-5 w-5" /> Volver al sitio
-        </button>
+        <div className="mt-8 space-y-2 border-t border-white/10 pt-6 lg:mt-auto">
+          <button
+            onClick={onExit}
+            className="flex min-h-11 w-full items-center gap-3 px-4 text-sm font-semibold text-white/55 transition-colors hover:text-white"
+          >
+            <Icon name="arrow" className="h-5 w-5 rotate-180" /> Volver al sitio
+          </button>
+          <button
+            onClick={onLogout}
+            className="flex min-h-11 w-full items-center gap-3 px-4 text-sm font-semibold text-orange-soft/85 transition-colors hover:bg-white/5 hover:text-orange-soft"
+          >
+            <Icon name="logout" className="h-5 w-5" /> Cerrar sesión
+          </button>
+        </div>
       </aside>
 
       <main className="p-5 sm:p-8 lg:p-12">
@@ -696,8 +735,10 @@ function AdminView({
               <Icon name="admin" />
             </span>
             <div>
-              <div className="text-sm font-semibold">Administrador</div>
-              <div className="text-xs text-slate/45">Operaciones Santiago</div>
+              <div className="text-sm font-semibold">{adminUser.username}</div>
+              <div className="text-xs text-slate/45">
+                Sesión JWT activa · ID #{adminUser.id_admin}
+              </div>
             </div>
           </div>
         </header>
@@ -942,6 +983,7 @@ function RequestsTable({
 }
 
 export default function App() {
+  const [adminUser, setAdminUser] = useState<AdminProfile | null>(null)
   const [adminOpen, setAdminOpen] = useState(false)
   const [adminLoginOpen, setAdminLoginOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -964,6 +1006,41 @@ export default function App() {
 
   // Las fechas se envían a mediodía UTC para evitar desfases de día por zona horaria.
   const toApiDateTime = (date: string) => `${date}T12:00:00Z`
+
+  // Restaura y valida sesión administrativa JWT persistida en sessionStorage (GET /admin/auth/me).
+  useEffect(() => {
+    if (!isAuthenticated()) return
+    let cancelled = false
+    getAdminProfile()
+      .then((profile) => {
+        if (!cancelled) setAdminUser(profile)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          logoutAdmin()
+          setAdminUser(null)
+          setAdminOpen(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleOpenAdmin = () => {
+    setMenuOpen(false)
+    if (adminUser && isAuthenticated()) {
+      setAdminOpen(true)
+    } else {
+      setAdminLoginOpen(true)
+    }
+  }
+
+  const handleAdminLogout = () => {
+    logoutAdmin()
+    setAdminUser(null)
+    setAdminOpen(false)
+  }
 
   // Carga del catálogo real desde la API (GET /equipos).
   useEffect(() => {
@@ -1096,12 +1173,14 @@ export default function App() {
     setSubmitError(null)
   }
 
-  if (adminOpen) {
+  if (adminOpen && adminUser) {
     return (
       <AdminView
+        adminUser={adminUser}
         requests={requests}
         products={products}
         onExit={() => setAdminOpen(false)}
+        onLogout={handleAdminLogout}
         onStatusChange={(id, status) =>
           setRequests((current) =>
             current.map((request) =>
@@ -1174,10 +1253,11 @@ export default function App() {
               Contacto
             </button>
             <button
-              onClick={() => setAdminLoginOpen(true)}
+              onClick={handleOpenAdmin}
               className="flex items-center gap-2 text-sm font-medium text-white/70 transition-colors hover:text-white"
             >
-              <Icon name="admin" className="h-4 w-4" /> Administrador
+              <Icon name="admin" className="h-4 w-4" />{" "}
+              {adminUser ? `Panel (${adminUser.username})` : "Administrador"}
             </button>
           </nav>
 
@@ -1219,13 +1299,12 @@ export default function App() {
               Contacto
             </button>
             <button
-              onClick={() => {
-                setMenuOpen(false)
-                setAdminLoginOpen(true)
-              }}
+              onClick={handleOpenAdmin}
               className="block w-full py-3 text-left text-sm"
             >
-              Vista administrador
+              {adminUser
+                ? `Panel administrador (${adminUser.username})`
+                : "Vista administrador"}
             </button>
           </div>
         )}
@@ -1791,7 +1870,8 @@ export default function App() {
       {adminLoginOpen && (
         <AdminLogin
           onClose={() => setAdminLoginOpen(false)}
-          onSuccess={() => {
+          onSuccess={(profile) => {
+            setAdminUser(profile)
             setAdminLoginOpen(false)
             setAdminOpen(true)
           }}

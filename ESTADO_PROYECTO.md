@@ -167,6 +167,12 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
   - Formulario de cotización conectado a `POST /api/v1/cotizaciones` (se incorporó el campo obligatorio `Teléfono` requerido por la base de datos) y se sincronizó el cálculo de días con la fórmula del backend (`max(1, devolución - retiro)`).
   - Ajustes de compatibilidad en backend: `CORS_ORIGINS` para el puerto 5173 en `.env.example` y `email-validator==2.2.0` agregado en `requirements.txt` para `EmailStr`.
   - Verificación exitosa con `tsc --noEmit` (exit 0) y `vite build`.
+- **Fase 6.3 (Integración de Autenticación Administrativa JWT):** ✅ **Completada**.
+  - Eliminadas las credenciales hardcodeadas (`ADMIN_EMAIL` / `ADMIN_PASSWORD`) en `front/src/App.tsx`.
+  - Modal `AdminLogin` conectado a `POST /api/v1/admin/auth/login` (campo `Usuario` + `Contraseña`, con estado de carga y manejo de errores reales de la API) y verificación del perfil vía `GET /api/v1/admin/auth/me`.
+  - Persistencia y validación automática del token JWT en `sessionStorage` al recargar la página (si expira o es inválido, se limpia automáticamente).
+  - Vista `AdminView` protegida estrictamente por sesión válida (`adminOpen && adminUser`), mostrando el usuario autenticado y sumando botón dedicado de **Cerrar sesión** además de **Volver al sitio**.
+  - Verificación exitosa con `tsc --noEmit` (exit 0) y `vite build`.
 - **Frontend (React 19 + TypeScript + Vite):** Ubicado en `front/`.
 
 ---
@@ -183,8 +189,8 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 5** | Implementación de Endpoints y Servicios FastAPI (según OpenAPI) | ✅ Completada |
 | **Fase 6.1** | Capa de Cliente API y Tipos TypeScript en Frontend | ✅ Completada |
 | **Fase 6.2** | Integración de Vista Pública (Catálogo y Cotizaciones reales) | ✅ Completada |
-| **Fase 6.3** | Integración de Autenticación Administrativa (JWT) | ⏳ Siguiente paso |
-| **Fase 6.4** | Integración del Panel Admin en Tiempo Real (Dashboard y CRUD) | ⏸️ Pendiente |
+| **Fase 6.3** | Integración de Autenticación Administrativa (JWT) | ✅ Completada |
+| **Fase 6.4** | Integración del Panel Admin en Tiempo Real (Dashboard y CRUD) | ⏳ Siguiente paso |
 | **Fase 6.5** | Verificación E2E de Flujo Completo (Cliente ➔ Admin ➔ DB) | ⏸️ Pendiente |
 | **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
 
