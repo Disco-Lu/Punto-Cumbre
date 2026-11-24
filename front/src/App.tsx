@@ -1,23 +1,36 @@
-import { FormEvent, ReactNode, useEffect, useState } from "react"
+import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react"
 import logoImg from "@/imports/punto-cumbre-logo.png"
 import {
+  actualizarEquipo,
+  actualizarEstadoReserva,
   ApiClientError,
   checkDisponibilidad,
+  crearEquipo,
+  eliminarEquipo,
   getAdminProfile,
+  getAdminReservas,
+  getCategorias,
   getEquipos,
+  getMetricasDashboard,
   isAuthenticated,
   loginAdmin,
   logoutAdmin,
   solicitarCotizacion,
   type AdminProfile,
+  type Categoria,
   type DisponibilidadResponse,
   type Equipo,
+  type EstadoReserva,
+  type MetricasDashboard,
+  type ReservaConDetalles,
 } from "@/api"
 
 type IconName = "arrow" | "admin" | "backpack" | "calendar" | "cart" | "check" | "close" | "crampon" | "dashboard" | "edit" | "jacket" | "lock" | "logout" | "mail" | "map" | "menu" | "mountain" | "package" | "phone" | "plus" | "shield" | "tent" | "tool" | "trash"
 
 type RentalItem = {
-  id?: number
+  id: number
+  categoryId: number
+  stock: number
   name: string
   use: string
   detail: string
@@ -26,18 +39,27 @@ type RentalItem = {
   price: number
 }
 
-type RequestStatus = "Nueva" | "Confirmada" | "En preparación" | "Entregada"
-
 type RentalRequest = {
+  reservationId: number
   id: string
   customer: string
   email: string
+  phone: string
   item: string
   startDate: string
   endDate: string
   days: number
   total: number
-  status: RequestStatus
+  status: EstadoReserva
+}
+
+// Etiquetas amigables para la máquina de estados del backend.
+const STATUS_LABELS: Record<EstadoReserva, string> = {
+  pendiente: "Pendiente",
+  confirmada: "Confirmada",
+  en_arriendo: "En arriendo",
+  devuelta: "Devuelta",
+  cancelada: "Cancelada",
 }
 
 // Imágenes de referencia: la tabla `equipo` del modelo ER no tiene columna de imagen,
@@ -52,6 +74,8 @@ const FALLBACK_IMAGES = [
 // Adaptador: convierte un `Equipo` de la API al formato visual que usa la UI.
 const toRentalItem = (equipo: Equipo): RentalItem => ({
   id: equipo.id_equipo,
+  categoryId: equipo.id_categoria,
+  stock: equipo.cantidad,
   name: equipo.nombre_equipo,
   use: equipo.categoria?.nombre_categoria ?? "Equipamiento",
   detail: equipo.caracteristicas,
@@ -60,41 +84,42 @@ const toRentalItem = (equipo: Equipo): RentalItem => ({
   image: FALLBACK_IMAGES[equipo.id_equipo % FALLBACK_IMAGES.length],
 })
 
-const INITIAL_REQUESTS: RentalRequest[] = [
-  {
-    id: "PC-1048",
-    customer: "Tomás Fuentes",
-    email: "tomas@correo.cl",
-    item: "Crampones semiautomáticos",
-    startDate: "2026-05-18",
-    endDate: "2026-05-21",
-    days: 4,
-    total: 44000,
-    status: "Nueva",
-  },
-  {
-    id: "PC-1047",
-    customer: "Daniela Rojas",
-    email: "daniela@correo.cl",
-    item: "Crampones automáticos",
-    startDate: "2026-05-14",
-    endDate: "2026-05-16",
-    days: 3,
-    total: 40500,
-    status: "Confirmada",
-  },
-  {
-    id: "PC-1046",
-    customer: "Ignacio Soto",
-    email: "ignacio@correo.cl",
-    item: "Crampones de correas",
-    startDate: "2026-05-10",
-    endDate: "2026-05-12",
-    days: 3,
-    total: 25500,
-    status: "En preparación",
-  },
-]
+const toDateOnly = (isoOrDate: string) => isoOrDate.split("T")[0]
+
+// Adaptador: convierte una `ReservaConDetalles` de la API a una fila de la tabla administrativa.
+const toRentalRequest = (reserva: ReservaConDetalles): RentalRequest => {
+  const startDate = toDateOnly(reserva.fecha_retiro)
+  const endDate = toDateOnly(reserva.fecha_devolucion)
+  const days = Math.max(
+    1,
+    Math.round(
+      (new Date(`${endDate}T12:00:00`).getTime() -
+        new Date(`${startDate}T12:00:00`).getTime()) /
+        86400000,
+    ),
+  )
+  const items = reserva.detalles
+    .map((detalle) => detalle.equipo?.nombre_equipo)
+    .filter((name): name is string => Boolean(name))
+  const dailySum = reserva.detalles.reduce(
+    (sum, detalle) => sum + Number(detalle.equipo?.precio_arriendo ?? 0),
+    0,
+  )
+
+  return {
+    reservationId: reserva.id_reserva,
+    id: `PC-${reserva.id_reserva}`,
+    customer: reserva.cliente?.nombre ?? `Cliente #${reserva.id_cliente}`,
+    email: reserva.cliente?.correo ?? "",
+    phone: reserva.cliente?.telefono ?? "",
+    item: items.length > 0 ? items.join(", ") : "Sin equipos registrados",
+    startDate,
+    endDate,
+    days,
+    total: Math.round(dailySum * days),
+    status: reserva.estado_reserva,
+  }
+}
 
 const currency = new Intl.NumberFormat("es-CL", {
   style: "currency",
@@ -104,7 +129,7 @@ const currency = new Intl.NumberFormat("es-CL", {
 
 const formatDate = (date: string) =>
   new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short" }).format(
-    new Date(`${date}T12:00:00`),
+    new Date(date.includes("T") ? date : `${date}T12:00:00`),
   )
 
 const SERVICES: {
@@ -327,19 +352,20 @@ function SectionLabel({
   )
 }
 
-function StatusBadge({ status }: { status: RequestStatus }) {
-  const styles: Record<RequestStatus, string> = {
-    Nueva: "bg-orange/12 text-orange-dark",
-    Confirmada: "bg-slate/10 text-slate",
-    "En preparación": "bg-secondary/15 text-secondary",
-    Entregada: "bg-muted text-muted-foreground",
+function StatusBadge({ status }: { status: EstadoReserva }) {
+  const styles: Record<EstadoReserva, string> = {
+    pendiente: "bg-orange/12 text-orange-dark",
+    confirmada: "bg-slate/10 text-slate",
+    en_arriendo: "bg-secondary/15 text-secondary",
+    devuelta: "bg-green-100 text-green-800",
+    cancelada: "bg-red-100 text-red-700",
   }
 
   return (
     <span
       className={`inline-flex px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${styles[status]}`}
     >
-      {status}
+      {STATUS_LABELS[status]}
     </span>
   )
 }
@@ -471,38 +497,77 @@ function AdminLogin({
   )
 }
 
+type ProductFormData = {
+  id_categoria: number
+  nombre_equipo: string
+  caracteristicas: string
+  precio_arriendo: number
+  cantidad: number
+}
+
 function ProductEditor({
   product,
+  categories,
   onClose,
   onSave,
 }: {
   product: RentalItem | null
+  categories: Categoria[]
   onClose: () => void
-  onSave: (product: RentalItem) => void
+  onSave: (payload: ProductFormData) => Promise<void>
 }) {
-  const [image, setImage] = useState(product?.image ?? "")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
 
-  const submitProduct = (event: FormEvent<HTMLFormElement>) => {
+  const submitProduct = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (saving) return
+
     const formData = new FormData(event.currentTarget)
-    onSave({
-      name: String(formData.get("name")).trim(),
-      use: String(formData.get("use")).trim(),
-      detail: String(formData.get("detail")).trim(),
-      tag: String(formData.get("tag")).trim(),
-      price: Number(formData.get("price")),
-      image: String(formData.get("image")).trim(),
-    })
+    const id_categoria = Number(formData.get("categoryId"))
+    const nombre_equipo = String(formData.get("name")).trim()
+    const caracteristicas = String(formData.get("detail")).trim()
+    const precio_arriendo = Number(formData.get("price"))
+    const cantidad = Number(formData.get("stock"))
+
+    if (!id_categoria) {
+      setError("Debes seleccionar una categoría válida.")
+      return
+    }
+
+    setError("")
+    setSaving(true)
+    try {
+      await onSave({
+        id_categoria,
+        nombre_equipo,
+        caracteristicas,
+        precio_arriendo,
+        cantidad,
+      })
+      onClose()
+    } catch (err: unknown) {
+      setError(
+        err instanceof ApiClientError
+          ? err.detail
+          : "No pudimos guardar los cambios en el servidor.",
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   const fieldClass =
-    "mt-2 h-12 w-full border border-slate/15 bg-snow px-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange"
+    "mt-2 h-12 w-full border border-slate/15 bg-snow px-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange disabled:opacity-60"
+
+  const defaultCategoryId =
+    product?.categoryId ?? categories[0]?.id_categoria ?? ""
 
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate/90 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose()
+        if (event.currentTarget === event.target && !saving) onClose()
       }}
     >
       <div className="my-8 w-full max-w-2xl bg-white shadow-2xl">
@@ -512,16 +577,17 @@ function ProductEditor({
               Gestión de inventario
             </div>
             <h2 className="mt-2 font-display text-4xl font-bold uppercase">
-              {product ? "Editar producto" : "Nuevo producto"}
+              {product ? "Editar equipo" : "Nuevo equipo"}
             </h2>
             <p className="mt-2 text-sm text-slate/50">
-              Los cambios se reflejarán inmediatamente en el catálogo público.
+              Los cambios se guardarán en Supabase y se reflejarán en el catálogo público.
             </p>
           </div>
           <button
             className="p-2 text-slate/45 transition-colors hover:text-slate"
             onClick={onClose}
-            aria-label="Cerrar editor de producto"
+            disabled={saving}
+            aria-label="Cerrar editor de equipo"
           >
             <Icon name="close" />
           </button>
@@ -530,97 +596,107 @@ function ProductEditor({
         <form onSubmit={submitProduct} className="space-y-5 p-6 sm:p-8">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-xs font-bold uppercase tracking-wider text-slate/55">
-              Nombre del producto
+              Nombre del equipo
               <input
                 required
                 autoFocus
                 name="name"
+                maxLength={200}
+                disabled={saving}
                 defaultValue={product?.name}
-                placeholder="Ej. Piolet técnico"
+                placeholder="Ej. Crampón Petzl Lynx"
                 className={fieldClass}
               />
             </label>
             <label className="text-xs font-bold uppercase tracking-wider text-slate/55">
-              Tipo de uso
-              <input
+              Categoría
+              <select
                 required
-                name="use"
-                defaultValue={product?.use}
-                placeholder="Ej. Alpinismo técnico"
+                name="categoryId"
+                disabled={saving || categories.length === 0}
+                defaultValue={defaultCategoryId}
                 className={fieldClass}
-              />
+              >
+                {categories.length === 0 && (
+                  <option value="">Sin categorías disponibles</option>
+                )}
+                {categories.map((cat) => (
+                  <option key={cat.id_categoria} value={cat.id_categoria}>
+                    {cat.nombre_categoria}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="text-xs font-bold uppercase tracking-wider text-slate/55">
-              Etiqueta
-              <input
-                required
-                name="tag"
-                defaultValue={product?.tag}
-                placeholder="Ej. 12 puntas"
-                className={fieldClass}
-              />
-            </label>
-            <label className="text-xs font-bold uppercase tracking-wider text-slate/55">
-              Precio diario
+              Precio diario (CLP)
               <input
                 required
                 min="1"
+                step="1"
                 name="price"
                 type="number"
+                disabled={saving}
                 defaultValue={product?.price}
                 placeholder="12000"
                 className={fieldClass}
               />
             </label>
+            <label className="text-xs font-bold uppercase tracking-wider text-slate/55">
+              Stock (unidades)
+              <input
+                required
+                min="0"
+                step="1"
+                name="stock"
+                type="number"
+                disabled={saving}
+                defaultValue={product?.stock ?? 1}
+                placeholder="5"
+                className={fieldClass}
+              />
+            </label>
           </div>
           <label className="block text-xs font-bold uppercase tracking-wider text-slate/55">
-            Descripción
+            Características / Ficha técnica
             <textarea
               required
-              rows={3}
+              rows={4}
               name="detail"
+              disabled={saving}
               defaultValue={product?.detail}
-              placeholder="Describe las características principales del equipo"
-              className="mt-2 w-full resize-none border border-slate/15 bg-snow p-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange"
-            />
-          </label>
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate/55">
-            URL de imagen
-            <input
-              required
-              name="image"
-              type="url"
-              value={image}
-              onChange={(event) => setImage(event.target.value)}
-              placeholder="https://..."
-              className={fieldClass}
+              placeholder="Describe especificaciones técnicas, material, peso y compatibilidad del equipo"
+              className="mt-2 w-full resize-none border border-slate/15 bg-snow p-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange disabled:opacity-60"
             />
           </label>
 
-          {image && (
-            <div className="flex items-center gap-4 border border-slate/10 bg-snow p-3">
-              <img
-                src={image}
-                alt="Vista previa del producto"
-                className="h-20 w-24 object-cover"
-              />
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider">
-                  Vista previa
-                </div>
-                <p className="mt-1 text-xs text-slate/45">
-                  Verifica que la imagen sea clara y represente el producto.
-                </p>
-              </div>
+          {error && (
+            <div
+              role="alert"
+              className="border-l-2 border-orange bg-orange/8 px-4 py-3 text-sm text-orange-dark"
+            >
+              {error}
             </div>
           )}
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={saving}
+            >
               Cancelar
             </Button>
-            <Button type="submit">
-              {product ? "Guardar cambios" : "Agregar producto"}{" "}
+            <Button
+              type="submit"
+              disabled={saving || categories.length === 0}
+              className="disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving
+                ? "Guardando..."
+                : product
+                  ? "Guardar cambios"
+                  : "Agregar equipo"}{" "}
               <Icon name={product ? "check" : "plus"} />
             </Button>
           </div>
@@ -632,33 +708,228 @@ function ProductEditor({
 
 function AdminView({
   adminUser,
-  requests,
   products,
   onExit,
   onLogout,
-  onStatusChange,
-  onAddProduct,
-  onUpdateProduct,
-  onDeleteProduct,
+  onReloadCatalog,
 }: {
   adminUser: AdminProfile
-  requests: RentalRequest[]
   products: RentalItem[]
   onExit: () => void
   onLogout: () => void
-  onStatusChange: (id: string, status: RequestStatus) => void
-  onAddProduct: (product: RentalItem) => void
-  onUpdateProduct: (index: number, product: RentalItem) => void
-  onDeleteProduct: (index: number) => void
+  onReloadCatalog: () => Promise<void>
 }) {
   const [section, setSection] =
     useState<"resumen" | "solicitudes" | "inventario">("resumen")
+  const [statusFilter, setStatusFilter] = useState<EstadoReserva | "todas">(
+    "todas",
+  )
   const [productEditor, setProductEditor] = useState<{
     product: RentalItem | null
-    index: number | null
   } | null>(null)
-  const pending = requests.filter((request) => request.status !== "Entregada")
-  const revenue = requests.reduce((sum, request) => sum + request.total, 0)
+
+  const [metrics, setMetrics] = useState<MetricasDashboard | null>(null)
+  const [requests, setRequests] = useState<RentalRequest[]>([])
+  const [categories, setCategories] = useState<Categoria[]>([])
+  const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [panelError, setPanelError] = useState<string | null>(null)
+  const [updatingReservationId, setUpdatingReservationId] = useState<
+    number | null
+  >(null)
+  const [deletingProductId, setDeletingProductId] = useState<number | null>(
+    null,
+  )
+
+  const handleApiError = useCallback(
+    (err: unknown, fallback: string) => {
+      if (err instanceof ApiClientError && err.status === 401) {
+        onLogout()
+        return
+      }
+      setPanelError(err instanceof ApiClientError ? err.detail : fallback)
+    },
+    [onLogout],
+  )
+
+  // Carga/revalidación en paralelo de métricas, reservas, categorías y catálogo.
+  const refreshAdminData = useCallback(
+    async (silent = false) => {
+      if (silent) {
+        setSyncing(true)
+      } else {
+        setLoading(true)
+      }
+      try {
+        const [metricasData, reservasData, categoriasData] = await Promise.all([
+          getMetricasDashboard(),
+          getAdminReservas(),
+          getCategorias(),
+        ])
+        setMetrics(metricasData)
+        setRequests(reservasData.map(toRentalRequest))
+        setCategories(categoriasData)
+        setLastUpdated(new Date())
+        setPanelError(null)
+      } catch (err: unknown) {
+        handleApiError(err, "No pudimos actualizar los datos del panel.")
+      } finally {
+        setLoading(false)
+        setSyncing(false)
+      }
+    },
+    [handleApiError],
+  )
+
+  // Carga inicial al abrir el panel.
+  useEffect(() => {
+    void refreshAdminData(false)
+  }, [refreshAdminData])
+
+  // Sincronización en tiempo real (Green Software):
+  // - Revalida al recuperar foco de pestaña.
+  // - Intervalo liviano de 15s SOLO si la pestaña está visible (0 consumo en segundo plano).
+  useEffect(() => {
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        void refreshAdminData(true)
+        void onReloadCatalog()
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshAdminData(true)
+      }
+    }, 15000)
+
+    window.addEventListener("focus", onVisibilityOrFocus)
+    document.addEventListener("visibilitychange", onVisibilityOrFocus)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener("focus", onVisibilityOrFocus)
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus)
+    }
+  }, [refreshAdminData, onReloadCatalog])
+
+  const handleStatusChange = async (
+    reservationId: number,
+    nuevoEstado: EstadoReserva,
+  ) => {
+    setUpdatingReservationId(reservationId)
+    setPanelError(null)
+    try {
+      const updated = await actualizarEstadoReserva(reservationId, nuevoEstado)
+      const mapped = toRentalRequest(updated)
+      setRequests((current) =>
+        current.map((item) =>
+          item.reservationId === reservationId ? mapped : item,
+        ),
+      )
+      // Refresca métricas del dashboard tras el cambio de estado
+      const freshMetrics = await getMetricasDashboard()
+      setMetrics(freshMetrics)
+      setLastUpdated(new Date())
+    } catch (err: unknown) {
+      handleApiError(err, "No se pudo actualizar el estado de la reserva.")
+    } finally {
+      setUpdatingReservationId(null)
+    }
+  }
+
+  const handleSaveProduct = async (payload: ProductFormData) => {
+    try {
+      if (productEditor?.product) {
+        await actualizarEquipo(productEditor.product.id, payload)
+      } else {
+        await crearEquipo({
+          ...payload,
+          id_admin: adminUser.id_admin,
+        })
+      }
+      await Promise.all([onReloadCatalog(), refreshAdminData(true)])
+    } catch (err: unknown) {
+      if (err instanceof ApiClientError && err.status === 401) {
+        onLogout()
+      }
+      throw err
+    }
+  }
+
+  const handleDeleteProduct = async (item: RentalItem) => {
+    if (!window.confirm(`¿Eliminar "${item.name}" del catálogo?`)) return
+    setDeletingProductId(item.id)
+    setPanelError(null)
+    try {
+      await eliminarEquipo(item.id)
+      await Promise.all([onReloadCatalog(), refreshAdminData(true)])
+    } catch (err: unknown) {
+      handleApiError(err, "No se pudo eliminar el equipo.")
+    } finally {
+      setDeletingProductId(null)
+    }
+  }
+
+  const filteredRequests =
+    statusFilter === "todas"
+      ? requests
+      : requests.filter((req) => req.status === statusFilter)
+
+  const exportRequestsCsv = () => {
+    const headers = [
+      "ID",
+      "Cliente",
+      "Correo",
+      "Teléfono",
+      "Equipos",
+      "Retiro",
+      "Devolución",
+      "Días",
+      "Total Estimado",
+      "Estado",
+    ]
+    const escapeCsv = (val: string | number) =>
+      `"${String(val).replace(/"/g, '""')}"`
+    const rows = filteredRequests.map((r) =>
+      [
+        r.id,
+        r.customer,
+        r.email,
+        r.phone,
+        r.item,
+        r.startDate,
+        r.endDate,
+        r.days,
+        r.total,
+        STATUS_LABELS[r.status],
+      ]
+        .map(escapeCsv)
+        .join(","),
+    )
+    const csv = [headers.join(","), ...rows].join("\n")
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `solicitudes-punto-cumbre-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const activeCount = metrics
+    ? (metrics.resumen_reservas.por_estado.pendiente ?? 0) +
+      (metrics.resumen_reservas.por_estado.confirmada ?? 0) +
+      (metrics.resumen_reservas.por_estado.en_arriendo ?? 0)
+    : requests.filter(
+        (r) => r.status !== "devuelta" && r.status !== "cancelada",
+      ).length
+
+  const projectedRevenue = requests
+    .filter((r) => r.status !== "cancelada")
+    .reduce((sum, req) => sum + req.total, 0)
+
+  const registeredRevenue = metrics?.finanzas.total_ingresos ?? 0
 
   return (
     <div className="min-h-screen bg-snow text-slate lg:grid lg:grid-cols-[280px_1fr]">
@@ -721,7 +992,7 @@ function AdminView({
       <main className="p-5 sm:p-8 lg:p-12">
         <header className="flex flex-col justify-between gap-5 border-b border-slate/10 pb-8 sm:flex-row sm:items-end">
           <div>
-            <SectionLabel>Operación diaria</SectionLabel>
+            <SectionLabel>Operación diaria en tiempo real</SectionLabel>
             <h1 className="font-display text-5xl font-bold uppercase leading-none">
               {section === "resumen"
                 ? "Resumen general"
@@ -730,181 +1001,271 @@ function AdminView({
                   : "Inventario"}
             </h1>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="grid h-11 w-11 place-items-center bg-slate text-white">
-              <Icon name="admin" />
-            </span>
-            <div>
-              <div className="text-sm font-semibold">{adminUser.username}</div>
-              <div className="text-xs text-slate/45">
-                Sesión JWT activa · ID #{adminUser.id_admin}
+          <div className="flex flex-wrap items-center gap-4">
+            <button
+              onClick={() => {
+                void refreshAdminData(true)
+                void onReloadCatalog()
+              }}
+              disabled={syncing}
+              className="border border-slate/15 bg-white px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-slate/70 transition-colors hover:border-orange hover:text-orange disabled:opacity-50"
+            >
+              {syncing
+                ? "Sincronizando..."
+                : lastUpdated
+                  ? `Actualizar · ${lastUpdated.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+                  : "Actualizar"}
+            </button>
+            <div className="flex items-center gap-3">
+              <span className="grid h-11 w-11 place-items-center bg-slate text-white">
+                <Icon name="admin" />
+              </span>
+              <div>
+                <div className="text-sm font-semibold">
+                  {adminUser.username}
+                </div>
+                <div className="text-xs text-slate/45">
+                  Sesión JWT activa · ID #{adminUser.id_admin}
+                </div>
               </div>
             </div>
           </div>
         </header>
 
-        {section === "resumen" && (
-          <>
-            <div className="mt-8 grid gap-4 sm:grid-cols-3">
-              {[
-                ["Solicitudes activas", String(pending.length), "calendar"],
-                ["Ingresos proyectados", currency.format(revenue), "cart"],
-                ["Categorías disponibles", String(products.length), "package"],
-              ].map(([label, value, icon]) => (
-                <article
-                  key={label}
-                  className="border border-slate/10 bg-white p-6"
-                >
-                  <div className="flex items-center justify-between text-orange">
-                    <Icon name={icon as IconName} className="h-6 w-6" />
-                    <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate/35">
-                      Este mes
-                    </span>
-                  </div>
-                  <div className="mt-8 font-display text-4xl font-bold uppercase">
-                    {value}
-                  </div>
-                  <div className="mt-1 text-sm text-slate/50">{label}</div>
-                </article>
-              ))}
-            </div>
-            <div className="mt-8">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-display text-2xl font-bold uppercase">
-                  Actividad reciente
-                </h2>
-                <button
-                  onClick={() => setSection("solicitudes")}
-                  className="text-xs font-bold uppercase tracking-wider text-orange"
-                >
-                  Ver todas
-                </button>
-              </div>
-              <RequestsTable
-                requests={requests.slice(0, 3)}
-                onStatusChange={onStatusChange}
-              />
-            </div>
-          </>
-        )}
-
-        {section === "solicitudes" && (
-          <div className="mt-8">
-            <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <p className="text-sm text-slate/55">
-                {requests.length} solicitudes registradas
-              </p>
-              <Button variant="dark" className="min-h-10">
-                Exportar listado
-              </Button>
-            </div>
-            <RequestsTable
-              requests={requests}
-              onStatusChange={onStatusChange}
-            />
+        {panelError && (
+          <div
+            role="alert"
+            className="mt-6 flex items-center justify-between gap-4 border-l-2 border-orange bg-orange/8 px-4 py-3 text-sm text-orange-dark"
+          >
+            <span>{panelError}</span>
+            <button
+              onClick={() => setPanelError(null)}
+              className="text-xs font-bold uppercase tracking-wider underline"
+            >
+              Cerrar
+            </button>
           </div>
         )}
 
-        {section === "inventario" && (
-          <div className="mt-8">
-            <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-              <div>
-                <h2 className="font-display text-2xl font-bold uppercase">
-                  Catálogo de productos
-                </h2>
-                <p className="mt-1 text-sm text-slate/50">
-                  {products.length} productos publicados para arriendo
-                </p>
-              </div>
-              <Button
-                className="shrink-0"
-                onClick={() => setProductEditor({ product: null, index: null })}
-              >
-                <Icon name="plus" /> Agregar producto
-              </Button>
-            </div>
+        {loading && !metrics ? (
+          <div className="mt-8 border border-slate/10 bg-white p-10 text-center text-sm text-slate/55">
+            Cargando datos en tiempo real desde Supabase...
+          </div>
+        ) : (
+          <>
+            {section === "resumen" && (
+              <>
+                <div className="mt-8 grid gap-4 sm:grid-cols-3">
+                  {[
+                    [
+                      "Solicitudes activas",
+                      String(activeCount),
+                      "calendar",
+                      metrics
+                        ? `${metrics.resumen_reservas.por_estado.pendiente} pend. · ${metrics.resumen_reservas.por_estado.confirmada} conf. · ${metrics.resumen_reservas.por_estado.en_arriendo} en curso`
+                        : "En vivo",
+                    ],
+                    [
+                      registeredRevenue > 0
+                        ? "Ingresos registrados"
+                        : "Ingresos proyectados",
+                      currency.format(
+                        registeredRevenue > 0
+                          ? registeredRevenue
+                          : projectedRevenue,
+                      ),
+                      "cart",
+                      registeredRevenue > 0
+                        ? `${metrics?.finanzas.transacciones_count ?? 0} pagos · Proy. ${currency.format(projectedRevenue)}`
+                        : `${metrics?.clientes.total_registrados ?? 0} clientes registrados`,
+                    ],
+                    [
+                      "Equipos en catálogo",
+                      String(metrics?.catalogo.total_equipos ?? products.length),
+                      "package",
+                      `${metrics?.catalogo.stock_total_unidades ?? 0} unidades · ${metrics?.catalogo.total_categorias ?? categories.length} categorías`,
+                    ],
+                  ].map(([label, value, icon, badge]) => (
+                    <article
+                      key={label}
+                      className="border border-slate/10 bg-white p-6"
+                    >
+                      <div className="flex items-center justify-between text-orange">
+                        <Icon name={icon as IconName} className="h-6 w-6" />
+                        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate/40">
+                          {badge}
+                        </span>
+                      </div>
+                      <div className="mt-8 font-display text-4xl font-bold uppercase">
+                        {value}
+                      </div>
+                      <div className="mt-1 text-sm text-slate/50">{label}</div>
+                    </article>
+                  ))}
+                </div>
+                <div className="mt-8">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="font-display text-2xl font-bold uppercase">
+                      Actividad reciente
+                    </h2>
+                    <button
+                      onClick={() => setSection("solicitudes")}
+                      className="text-xs font-bold uppercase tracking-wider text-orange"
+                    >
+                      Ver todas ({requests.length})
+                    </button>
+                  </div>
+                  <RequestsTable
+                    requests={requests.slice(0, 5)}
+                    updatingId={updatingReservationId}
+                    onStatusChange={handleStatusChange}
+                  />
+                </div>
+              </>
+            )}
 
-            {products.length > 0 ? (
-              <div className="grid gap-5 sm:grid-cols-2">
-                {products.map((item, index) => (
-                  <article
-                    key={`${item.name}-${index}`}
-                    className="flex gap-5 border border-slate/10 bg-white p-5"
+            {section === "solicitudes" && (
+              <div className="mt-8">
+                <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                  <div className="flex flex-wrap gap-2">
+                    {(
+                      [
+                        ["todas", "Todas"],
+                        ["pendiente", "Pendientes"],
+                        ["confirmada", "Confirmadas"],
+                        ["en_arriendo", "En arriendo"],
+                        ["devuelta", "Devueltas"],
+                        ["cancelada", "Canceladas"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <button
+                        key={value}
+                        onClick={() => setStatusFilter(value)}
+                        className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-colors ${
+                          statusFilter === value
+                            ? "bg-orange text-white"
+                            : "border border-slate/15 bg-white text-slate/60 hover:border-orange hover:text-slate"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <Button
+                    variant="dark"
+                    className="min-h-10 shrink-0"
+                    onClick={exportRequestsCsv}
+                    disabled={filteredRequests.length === 0}
                   >
-                    <img
-                      src={item.image}
-                      alt=""
-                      className="h-28 w-28 shrink-0 object-cover"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-orange">
-                        {item.use}
-                      </div>
-                      <h3 className="mt-1 font-display text-xl font-bold uppercase leading-none">
-                        {item.name}
-                      </h3>
-                      <div className="mt-3 text-sm font-semibold">
-                        {currency.format(item.price)}{" "}
-                        <span className="font-normal text-slate/40">/ día</span>
-                      </div>
-                      <div className="mt-4 flex items-center gap-4 border-t border-slate/10 pt-3">
-                        <button
-                          onClick={() =>
-                            setProductEditor({ product: item, index })
-                          }
-                          className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate/55 transition-colors hover:text-orange"
-                        >
-                          <Icon name="edit" className="h-4 w-4" /> Editar
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                `¿Eliminar "${item.name}" del catálogo?`,
-                              )
-                            ) {
-                              onDeleteProduct(index)
-                            }
-                          }}
-                          className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate/40 transition-colors hover:text-orange-dark"
-                        >
-                          <Icon name="trash" className="h-4 w-4" /> Eliminar
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="border border-dashed border-slate/20 bg-white p-12 text-center">
-                <Icon
-                  name="package"
-                  className="mx-auto h-10 w-10 text-slate/25"
+                    Exportar CSV ({filteredRequests.length})
+                  </Button>
+                </div>
+                <RequestsTable
+                  requests={filteredRequests}
+                  updatingId={updatingReservationId}
+                  onStatusChange={handleStatusChange}
                 />
-                <h3 className="mt-4 font-display text-2xl font-bold uppercase">
-                  Inventario vacío
-                </h3>
-                <p className="mt-2 text-sm text-slate/45">
-                  Agrega el primer producto para publicarlo en el catálogo.
-                </p>
               </div>
             )}
-          </div>
+
+            {section === "inventario" && (
+              <div className="mt-8">
+                <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                  <div>
+                    <h2 className="font-display text-2xl font-bold uppercase">
+                      Catálogo de productos
+                    </h2>
+                    <p className="mt-1 text-sm text-slate/50">
+                      {products.length} equipos publicados en Supabase
+                    </p>
+                  </div>
+                  <Button
+                    className="shrink-0"
+                    onClick={() => setProductEditor({ product: null })}
+                  >
+                    <Icon name="plus" /> Agregar equipo
+                  </Button>
+                </div>
+
+                {products.length > 0 ? (
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    {products.map((item) => (
+                      <article
+                        key={item.id}
+                        className="flex gap-5 border border-slate/10 bg-white p-5"
+                      >
+                        <img
+                          src={item.image}
+                          alt=""
+                          className="h-28 w-28 shrink-0 object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-orange">
+                              {item.use}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate/45">
+                              Stock: {item.stock}
+                            </span>
+                          </div>
+                          <h3 className="mt-1 font-display text-xl font-bold uppercase leading-none">
+                            {item.name}
+                          </h3>
+                          <div className="mt-3 text-sm font-semibold">
+                            {currency.format(item.price)}{" "}
+                            <span className="font-normal text-slate/40">
+                              / día
+                            </span>
+                          </div>
+                          <div className="mt-4 flex items-center gap-4 border-t border-slate/10 pt-3">
+                            <button
+                              onClick={() => setProductEditor({ product: item })}
+                              disabled={deletingProductId === item.id}
+                              className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate/55 transition-colors hover:text-orange disabled:opacity-40"
+                            >
+                              <Icon name="edit" className="h-4 w-4" /> Editar
+                            </button>
+                            <button
+                              onClick={() => void handleDeleteProduct(item)}
+                              disabled={deletingProductId === item.id}
+                              className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate/40 transition-colors hover:text-orange-dark disabled:opacity-40"
+                            >
+                              <Icon name="trash" className="h-4 w-4" />{" "}
+                              {deletingProductId === item.id
+                                ? "Eliminando..."
+                                : "Eliminar"}
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="border border-dashed border-slate/20 bg-white p-12 text-center">
+                    <Icon
+                      name="package"
+                      className="mx-auto h-10 w-10 text-slate/25"
+                    />
+                    <h3 className="mt-4 font-display text-2xl font-bold uppercase">
+                      Inventario vacío
+                    </h3>
+                    <p className="mt-2 text-sm text-slate/45">
+                      Agrega el primer equipo para publicarlo en el catálogo.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </main>
 
       {productEditor && (
         <ProductEditor
           product={productEditor.product}
+          categories={categories}
           onClose={() => setProductEditor(null)}
-          onSave={(product) => {
-            if (productEditor.index === null) {
-              onAddProduct(product)
-            } else {
-              onUpdateProduct(productEditor.index, product)
-            }
-            setProductEditor(null)
-          }}
+          onSave={handleSaveProduct}
         />
       )}
     </div>
@@ -913,16 +1274,25 @@ function AdminView({
 
 function RequestsTable({
   requests,
+  updatingId,
   onStatusChange,
 }: {
   requests: RentalRequest[]
-  onStatusChange: (id: string, status: RequestStatus) => void
+  updatingId: number | null
+  onStatusChange: (reservationId: number, status: EstadoReserva) => void
 }) {
-  const nextStatus: Record<RequestStatus, RequestStatus> = {
-    Nueva: "Confirmada",
-    Confirmada: "En preparación",
-    "En preparación": "Entregada",
-    Entregada: "Entregada",
+  const nextStatus: Partial<Record<EstadoReserva, EstadoReserva>> = {
+    pendiente: "confirmada",
+    confirmada: "en_arriendo",
+    en_arriendo: "devuelta",
+  }
+
+  if (requests.length === 0) {
+    return (
+      <div className="border border-dashed border-slate/20 bg-white p-10 text-center text-sm text-slate/50">
+        No hay solicitudes registradas para este filtro.
+      </div>
+    )
   }
 
   return (
@@ -939,43 +1309,85 @@ function RequestsTable({
           </tr>
         </thead>
         <tbody>
-          {requests.map((request) => (
-            <tr
-              key={request.id}
-              className="border-b border-slate/8 last:border-b-0"
-            >
-              <td className="p-4 text-xs font-bold text-orange">
-                {request.id}
-              </td>
-              <td className="p-4">
-                <div className="text-sm font-semibold">{request.customer}</div>
-                <div className="mt-1 text-xs text-slate/45">{request.item}</div>
-              </td>
-              <td className="p-4 text-xs text-slate/55">
-                {formatDate(request.startDate)} — {formatDate(request.endDate)}
-              </td>
-              <td className="p-4 text-sm font-semibold">
-                {currency.format(request.total)}
-              </td>
-              <td className="p-4">
-                <StatusBadge status={request.status} />
-              </td>
-              <td className="p-4 text-right">
-                {request.status !== "Entregada" ? (
-                  <button
-                    onClick={() =>
-                      onStatusChange(request.id, nextStatus[request.status])
-                    }
-                    className="text-xs font-bold uppercase tracking-wider text-slate transition-colors hover:text-orange"
-                  >
-                    Avanzar estado
-                  </button>
-                ) : (
-                  <span className="text-xs text-slate/30">Completada</span>
-                )}
-              </td>
-            </tr>
-          ))}
+          {requests.map((request) => {
+            const next = nextStatus[request.status]
+            const isUpdating = updatingId === request.reservationId
+            return (
+              <tr
+                key={request.id}
+                className="border-b border-slate/8 last:border-b-0"
+              >
+                <td className="p-4 text-xs font-bold text-orange">
+                  {request.id}
+                </td>
+                <td className="p-4">
+                  <div className="text-sm font-semibold">
+                    {request.customer}
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate/45">
+                    {request.item}
+                  </div>
+                  {request.email && (
+                    <div className="mt-0.5 text-[11px] text-slate/35">
+                      {request.email}
+                      {request.phone ? ` · ${request.phone}` : ""}
+                    </div>
+                  )}
+                </td>
+                <td className="p-4 text-xs text-slate/55">
+                  <div>
+                    {formatDate(request.startDate)} —{" "}
+                    {formatDate(request.endDate)}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-slate/35">
+                    {request.days} {request.days === 1 ? "día" : "días"}
+                  </div>
+                </td>
+                <td className="p-4 text-sm font-semibold">
+                  {currency.format(request.total)}
+                </td>
+                <td className="p-4">
+                  <StatusBadge status={request.status} />
+                </td>
+                <td className="p-4 text-right">
+                  {next ? (
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        disabled={isUpdating}
+                        onClick={() =>
+                          onStatusChange(request.reservationId, next)
+                        }
+                        className="text-xs font-bold uppercase tracking-wider text-slate transition-colors hover:text-orange disabled:opacity-40"
+                      >
+                        {isUpdating
+                          ? "Actualizando..."
+                          : `Pasar a ${STATUS_LABELS[next]}`}
+                      </button>
+                      <button
+                        disabled={isUpdating}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `¿Cancelar la solicitud ${request.id} de ${request.customer}?`,
+                            )
+                          ) {
+                            onStatusChange(request.reservationId, "cancelada")
+                          }
+                        }}
+                        className="text-xs font-bold uppercase tracking-wider text-slate/35 transition-colors hover:text-red-600 disabled:opacity-40"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate/35">
+                      {STATUS_LABELS[request.status]}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -992,11 +1404,9 @@ export default function App() {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [lastRequest, setLastRequest] = useState<RentalRequest | null>(null)
-  const [requests, setRequests] = useState<RentalRequest[]>(INITIAL_REQUESTS)
   const [products, setProducts] = useState<RentalItem[]>([])
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [catalogError, setCatalogError] = useState<string | null>(null)
-  const [catalogReload, setCatalogReload] = useState(0)
   const [availability, setAvailability] =
     useState<DisponibilidadResponse | null>(null)
   const [availabilityLoading, setAvailabilityLoading] = useState(false)
@@ -1006,6 +1416,24 @@ export default function App() {
 
   // Las fechas se envían a mediodía UTC para evitar desfases de día por zona horaria.
   const toApiDateTime = (date: string) => `${date}T12:00:00Z`
+
+  // Carga/recarga reutilizable del catálogo real desde la API (GET /equipos).
+  const reloadCatalog = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setCatalogLoading(true)
+    setCatalogError(null)
+    try {
+      const equipos = await getEquipos()
+      setProducts(equipos.map(toRentalItem))
+    } catch (error: unknown) {
+      setCatalogError(
+        error instanceof ApiClientError
+          ? error.detail
+          : "No pudimos conectar con el servidor.",
+      )
+    } finally {
+      setCatalogLoading(false)
+    }
+  }, [])
 
   // Restaura y valida sesión administrativa JWT persistida en sessionStorage (GET /admin/auth/me).
   useEffect(() => {
@@ -1042,30 +1470,10 @@ export default function App() {
     setAdminOpen(false)
   }
 
-  // Carga del catálogo real desde la API (GET /equipos).
+  // Carga inicial del catálogo real.
   useEffect(() => {
-    let cancelled = false
-    setCatalogLoading(true)
-    setCatalogError(null)
-    getEquipos()
-      .then((equipos) => {
-        if (!cancelled) setProducts(equipos.map(toRentalItem))
-      })
-      .catch((error: unknown) => {
-        if (!cancelled)
-          setCatalogError(
-            error instanceof ApiClientError
-              ? error.detail
-              : "No pudimos conectar con el servidor.",
-          )
-      })
-      .finally(() => {
-        if (!cancelled) setCatalogLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [catalogReload])
+    void reloadCatalog(true)
+  }, [reloadCatalog])
 
   // Consulta de disponibilidad real: solo se dispara cuando ambas fechas son válidas.
   useEffect(() => {
@@ -1140,17 +1548,18 @@ export default function App() {
         equipos_ids: [rentalItem.id],
       })
       const request: RentalRequest = {
+        reservationId: resumen.id_reserva,
         id: `PC-${resumen.id_reserva}`,
         customer: resumen.cliente.nombre,
         email: resumen.cliente.correo,
+        phone: resumen.cliente.telefono,
         item: resumen.arriendo.equipos.map((eq) => eq.nombre_equipo).join(", "),
         startDate,
         endDate,
         days: resumen.arriendo.total_dias,
         total: resumen.arriendo.total_estimado,
-        status: "Nueva",
+        status: "pendiente",
       }
-      setRequests((current) => [request, ...current])
       setLastRequest(request)
       setSubmitted(true)
     } catch (error: unknown) {
@@ -1173,36 +1582,19 @@ export default function App() {
     setSubmitError(null)
   }
 
+  const silentReloadCatalog = useCallback(
+    () => reloadCatalog(false),
+    [reloadCatalog],
+  )
+
   if (adminOpen && adminUser) {
     return (
       <AdminView
         adminUser={adminUser}
-        requests={requests}
         products={products}
         onExit={() => setAdminOpen(false)}
         onLogout={handleAdminLogout}
-        onStatusChange={(id, status) =>
-          setRequests((current) =>
-            current.map((request) =>
-              request.id === id ? { ...request, status } : request,
-            ),
-          )
-        }
-        onAddProduct={(product) =>
-          setProducts((current) => [...current, product])
-        }
-        onUpdateProduct={(index, product) =>
-          setProducts((current) =>
-            current.map((item, itemIndex) =>
-              itemIndex === index ? product : item,
-            ),
-          )
-        }
-        onDeleteProduct={(index) =>
-          setProducts((current) =>
-            current.filter((_, itemIndex) => itemIndex !== index),
-          )
-        }
+        onReloadCatalog={silentReloadCatalog}
       />
     )
   }
@@ -1438,7 +1830,7 @@ export default function App() {
               </p>
               <Button
                 variant="outline"
-                onClick={() => setCatalogReload((count) => count + 1)}
+                onClick={() => void reloadCatalog(true)}
               >
                 Reintentar
               </Button>

@@ -173,6 +173,13 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
   - Persistencia y validación automática del token JWT en `sessionStorage` al recargar la página (si expira o es inválido, se limpia automáticamente).
   - Vista `AdminView` protegida estrictamente por sesión válida (`adminOpen && adminUser`), mostrando el usuario autenticado y sumando botón dedicado de **Cerrar sesión** además de **Volver al sitio**.
   - Verificación exitosa con `tsc --noEmit` (exit 0) y `vite build`.
+- **Fase 6.4 (Integración del Panel Administrativo en Tiempo Real):** ✅ **Completada**.
+  - Eliminados los datos hardcodeados (`INITIAL_REQUESTS`) en `front/src/App.tsx`; todo el panel consume directamente los endpoints protegidos de FastAPI.
+  - **Dashboard (Resumen):** Métricas reales desde `GET /api/v1/admin/dashboard/metricas` (solicitudes activas desglosadas por estado, ingresos registrados/proyectados, equipos y stock total en Supabase).
+  - **Solicitudes de Arriendo:** Listado real vía `GET /api/v1/admin/reservas`, filtros por estado (`pendiente`, `confirmada`, `en_arriendo`, `devuelta`, `cancelada`), transiciones conectadas a `PATCH /api/v1/admin/reservas/{id}/estado` respetando la máquina de estados (incluyendo cancelación con confirmación) y exportación real a CSV.
+  - **Inventario (CRUD):** `ProductEditor` conectado a `GET /api/v1/categorias`, `POST /api/v1/admin/equipos`, `PUT /api/v1/admin/equipos/{id}` y `DELETE /api/v1/admin/equipos/{id}`, sincronizando automáticamente el catálogo público y el dashboard tras cada operación.
+  - **Tiempo Real (Green Software):** Carga inicial en paralelo (`Promise.all`), revalidación al enfocar la pestaña (`focus` / `visibilitychange`), refresco liviano cada 15s **solo cuando la pestaña está visible** (0 tráfico en segundo plano), botón manual de actualización y cierre automático de sesión ante HTTP `401`.
+  - Verificación exitosa con `tsc --noEmit` (exit 0) y `vite build`.
 - **Frontend (React 19 + TypeScript + Vite):** Ubicado en `front/`.
 
 ---
@@ -190,7 +197,7 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 6.1** | Capa de Cliente API y Tipos TypeScript en Frontend | ✅ Completada |
 | **Fase 6.2** | Integración de Vista Pública (Catálogo y Cotizaciones reales) | ✅ Completada |
 | **Fase 6.3** | Integración de Autenticación Administrativa (JWT) | ✅ Completada |
-| **Fase 6.4** | Integración del Panel Admin en Tiempo Real (Dashboard y CRUD) | ⏳ Siguiente paso |
-| **Fase 6.5** | Verificación E2E de Flujo Completo (Cliente ➔ Admin ➔ DB) | ⏸️ Pendiente |
+| **Fase 6.4** | Integración del Panel Admin en Tiempo Real (Dashboard y CRUD) | ✅ Completada |
+| **Fase 6.5** | Verificación E2E de Flujo Completo (Cliente ➔ Admin ➔ DB) | ⏳ Siguiente paso |
 | **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
 
