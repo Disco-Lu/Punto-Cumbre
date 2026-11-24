@@ -185,7 +185,14 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
   - Configurado `backend/.env` con la conexión IPv4 **Session Pooler** de Supabase (`aws-0-us-east-1.pooler.supabase.com:5432`) y protegido `.gitignore` contra la exposición de credenciales.
   - Detectado y corregido el hash bcrypt inicial de `admin` en Supabase y en `database/seed.sql` (ahora coincide con `admin123`).
   - Ejecutadas y aprobadas **15/15 pruebas E2E en vivo** contra Supabase: Healthcheck ➔ Categorías ➔ Equipos ➔ Login JWT ➔ Perfil `/me` ➔ Crear/Editar Equipo ➔ Disponibilidad antes/después ➔ Cotización automática (`3 días × $12.000 = $36.000`) ➔ Historial cliente ➔ Métricas Dashboard ➔ Listado Admin ➔ Máquina de estados completa (`pendiente` ➔ `confirmada` ➔ `en_arriendo` ➔ `devuelta`) ➔ Bloqueo de transición inválida (`400`) ➔ Limpieza de datos de prueba.
-- **Frontend (React 19 + TypeScript + Vite):** Ubicado en `front/`.
+- **Fase 7 (Suite Automatizada de Pruebas BDD, Integración y Contrato SDD):** ✅ **Completada**.
+  - Dependencias de testing separadas de producción en `backend/requirements-dev.txt` (`pytest`, `pytest-asyncio`, `aiosqlite`) bajo principios de *Green Software*.
+  - Entorno aislado en memoria (`sqlite+aiosqlite:///:memory:` + `StaticPool`) en `backend/tests/conftest.py` (0 tráfico de red hacia Supabase, 0 contaminación de datos productivos y hash bcrypt precalculado una sola vez).
+  - **18/18 pruebas aprobadas en 2.63s** cubriendo:
+    - `test_catalogo_y_disponibilidad.py` (HU01, HU02, HU03): categorías, filtros, ficha técnica, stock total/parcial/agotado, fechas inválidas y liberación inmediata al cancelar.
+    - `test_cotizaciones_y_reservas.py` (HU04, HU05, HU10, HU12): cálculo multi-equipo y día único, validaciones (`400`/`422`), reutilización de cliente, historial y máquina de estados completa con bloqueo de transiciones inválidas.
+    - `test_admin_y_contrato.py` (RNF 002, RF 008, RF 009, HU07, HU09): seguridad JWT, CRUD de categorías y equipos con integridad referencial, pagos + promoción automática, métricas de dashboard, verificación de contrato `/api/v1/openapi.json` y métricas Green Software en `/api/v1/health`.
+- **Frontend (React 19 + TypeScript + Vite):** Ubicado en `front/`, integrado en tiempo real y compilando sin errores.
 
 ---
 
@@ -204,5 +211,5 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 6.3** | Integración de Autenticación Administrativa (JWT) | ✅ Completada |
 | **Fase 6.4** | Integración del Panel Admin en Tiempo Real (Dashboard y CRUD) | ✅ Completada |
 | **Fase 6.5** | Verificación E2E de Flujo Completo (Cliente ➔ Admin ➔ DB) | ✅ Completada |
-| **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏳ Siguiente paso |
+| **Fase 7** | Pruebas de integración, validación BDD y contrato | ✅ Completada |
 

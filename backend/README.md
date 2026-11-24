@@ -76,6 +76,17 @@ Una vez que el servidor esté corriendo:
 
 ---
 
+## 🧪 Pruebas Automatizadas (BDD, Integración y Contrato)
+
+Las dependencias de pruebas están separadas en `requirements-dev.txt` (*Green Software*) y se ejecutan en memoria con `aiosqlite` sin tocar Supabase:
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+---
+
 ## 👩‍💻 Instrucciones para tu compañera (Frontend Next.js)
 
 Para que tu compañera consuma esta API con tipos TypeScript 100% seguros derivados del contrato SDD:

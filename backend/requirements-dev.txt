@@ -1,0 +1,4 @@
+# Dependencias exclusivas de testing y calidad (Green Software: separadas de producción)
+pytest==8.3.3
+pytest-asyncio==0.24.0
+aiosqlite==0.20.0
