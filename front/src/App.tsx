@@ -1,9 +1,18 @@
-import { FormEvent, ReactNode, useState } from "react"
+import { FormEvent, ReactNode, useEffect, useState } from "react"
 import logoImg from "@/imports/punto-cumbre-logo.png"
+import {
+  ApiClientError,
+  checkDisponibilidad,
+  getEquipos,
+  solicitarCotizacion,
+  type DisponibilidadResponse,
+  type Equipo,
+} from "@/api"
 
 type IconName = "arrow" | "admin" | "backpack" | "calendar" | "cart" | "check" | "close" | "crampon" | "dashboard" | "edit" | "jacket" | "lock" | "logout" | "mail" | "map" | "menu" | "mountain" | "package" | "phone" | "plus" | "shield" | "tent" | "tool" | "trash"
 
 type RentalItem = {
+  id?: number
   name: string
   use: string
   detail: string
@@ -26,48 +35,25 @@ type RentalRequest = {
   status: RequestStatus
 }
 
-const RENTAL_ITEMS: RentalItem[] = [
-  {
-    name: "Crampones de correas",
-    use: "Ajuste flexible",
-    detail:
-      "Fijación universal para botas de trekking. Una opción confiable para travesías en glaciar y montañismo clásico.",
-    tag: "10 puntas",
-    price: 8500,
-    image:
-      "https://images.unsplash.com/photo-1485871800663-71856dc09ec4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=85&w=900",
-  },
-  {
-    name: "Crampones semiautomáticos",
-    use: "Alpinismo técnico",
-    detail:
-      "Fijación híbrida con bloqueo preciso en el talón. Diseñados para botas rígidas y terreno mixto.",
-    tag: "12 puntas",
-    price: 11000,
-    image:
-      "https://images.unsplash.com/photo-1579769696606-3a52f6d41b95?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=85&w=900",
-  },
-  {
-    name: "Crampones automáticos",
-    use: "Máxima precisión",
-    detail:
-      "Rendimiento técnico para botas compatibles. Seguros, rígidos y rápidos de ajustar.",
-    tag: "12 puntas",
-    price: 13500,
-    image:
-      "https://images.unsplash.com/photo-1572037861810-0e1980e7f9fc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=85&w=900",
-  },
-  {
-    name: "Crampones para escalada en hielo",
-    use: "Hielo vertical",
-    detail:
-      "Puntas frontales agresivas para terreno empinado, cascadas y escalada invernal exigente.",
-    tag: "Mono / doble punta",
-    price: 16000,
-    image:
-      "https://images.unsplash.com/photo-1485872987516-ec9b00fe7a65?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=85&w=900",
-  },
+// Imágenes de referencia: la tabla `equipo` del modelo ER no tiene columna de imagen,
+// por lo que se asigna una foto de forma determinística según el id del equipo.
+const FALLBACK_IMAGES = [
+  "https://images.unsplash.com/photo-1485871800663-71856dc09ec4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=85&w=900",
+  "https://images.unsplash.com/photo-1579769696606-3a52f6d41b95?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=85&w=900",
+  "https://images.unsplash.com/photo-1572037861810-0e1980e7f9fc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=85&w=900",
+  "https://images.unsplash.com/photo-1485872987516-ec9b00fe7a65?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=85&w=900",
 ]
+
+// Adaptador: convierte un `Equipo` de la API al formato visual que usa la UI.
+const toRentalItem = (equipo: Equipo): RentalItem => ({
+  id: equipo.id_equipo,
+  name: equipo.nombre_equipo,
+  use: equipo.categoria?.nombre_categoria ?? "Equipamiento",
+  detail: equipo.caracteristicas,
+  tag: `${equipo.cantidad} ${equipo.cantidad === 1 ? "unidad" : "unidades"}`,
+  price: Number(equipo.precio_arriendo),
+  image: FALLBACK_IMAGES[equipo.id_equipo % FALLBACK_IMAGES.length],
+})
 
 const INITIAL_REQUESTS: RentalRequest[] = [
   {
@@ -965,44 +951,140 @@ export default function App() {
   const [endDate, setEndDate] = useState("")
   const [lastRequest, setLastRequest] = useState<RentalRequest | null>(null)
   const [requests, setRequests] = useState<RentalRequest[]>(INITIAL_REQUESTS)
-  const [products, setProducts] = useState<RentalItem[]>(RENTAL_ITEMS)
+  const [products, setProducts] = useState<RentalItem[]>([])
+  const [catalogLoading, setCatalogLoading] = useState(true)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [catalogReload, setCatalogReload] = useState(0)
+  const [availability, setAvailability] =
+    useState<DisponibilidadResponse | null>(null)
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // Las fechas se envían a mediodía UTC para evitar desfases de día por zona horaria.
+  const toApiDateTime = (date: string) => `${date}T12:00:00Z`
+
+  // Carga del catálogo real desde la API (GET /equipos).
+  useEffect(() => {
+    let cancelled = false
+    setCatalogLoading(true)
+    setCatalogError(null)
+    getEquipos()
+      .then((equipos) => {
+        if (!cancelled) setProducts(equipos.map(toRentalItem))
+      })
+      .catch((error: unknown) => {
+        if (!cancelled)
+          setCatalogError(
+            error instanceof ApiClientError
+              ? error.detail
+              : "No pudimos conectar con el servidor.",
+          )
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [catalogReload])
+
+  // Consulta de disponibilidad real: solo se dispara cuando ambas fechas son válidas.
+  useEffect(() => {
+    setAvailability(null)
+    setAvailabilityError(null)
+    if (!rentalItem?.id || !startDate || !endDate || endDate < startDate) return
+
+    let cancelled = false
+    setAvailabilityLoading(true)
+    checkDisponibilidad(
+      rentalItem.id,
+      toApiDateTime(startDate),
+      toApiDateTime(endDate),
+    )
+      .then((result) => {
+        if (!cancelled) setAvailability(result)
+      })
+      .catch((error: unknown) => {
+        if (!cancelled)
+          setAvailabilityError(
+            error instanceof ApiClientError
+              ? error.detail
+              : "No pudimos verificar la disponibilidad.",
+          )
+      })
+      .finally(() => {
+        if (!cancelled) setAvailabilityLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rentalItem, startDate, endDate])
+
+  // Misma regla que el backend: días = max(1, devolución - retiro).
   const rentalDays =
-    startDate && endDate
+    startDate && endDate && endDate >= startDate
       ? Math.max(
-          0,
-          Math.ceil(
+          1,
+          Math.round(
             (new Date(`${endDate}T12:00:00`).getTime() -
               new Date(`${startDate}T12:00:00`).getTime()) /
               86400000,
-          ) + 1,
+          ),
         )
       : 0
   const rentalTotal = rentalItem ? rentalDays * rentalItem.price : 0
+  const canSubmit =
+    rentalDays > 0 &&
+    !submitting &&
+    !availabilityLoading &&
+    availability?.esta_disponible === true
 
   const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" })
     setMenuOpen(false)
   }
 
-  const submitRental = (event: FormEvent<HTMLFormElement>) => {
+  // Envío real de la cotización (POST /cotizaciones).
+  const submitRental = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!rentalItem || rentalDays < 1) return
+    if (!rentalItem?.id || !canSubmit) return
     const formData = new FormData(event.currentTarget)
-    const request: RentalRequest = {
-      id: `PC-${1049 + requests.length - INITIAL_REQUESTS.length}`,
-      customer: String(formData.get("name")),
-      email: String(formData.get("email")),
-      item: rentalItem.name,
-      startDate,
-      endDate,
-      days: rentalDays,
-      total: rentalTotal,
-      status: "Nueva",
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const resumen = await solicitarCotizacion({
+        nombre_cliente: String(formData.get("name")),
+        correo_cliente: String(formData.get("email")),
+        telefono_cliente: String(formData.get("phone")),
+        fecha_retiro: toApiDateTime(startDate),
+        fecha_devolucion: toApiDateTime(endDate),
+        equipos_ids: [rentalItem.id],
+      })
+      const request: RentalRequest = {
+        id: `PC-${resumen.id_reserva}`,
+        customer: resumen.cliente.nombre,
+        email: resumen.cliente.correo,
+        item: resumen.arriendo.equipos.map((eq) => eq.nombre_equipo).join(", "),
+        startDate,
+        endDate,
+        days: resumen.arriendo.total_dias,
+        total: resumen.arriendo.total_estimado,
+        status: "Nueva",
+      }
+      setRequests((current) => [request, ...current])
+      setLastRequest(request)
+      setSubmitted(true)
+    } catch (error: unknown) {
+      setSubmitError(
+        error instanceof ApiClientError
+          ? error.detail
+          : "No pudimos registrar tu solicitud. Intenta nuevamente.",
+      )
+    } finally {
+      setSubmitting(false)
     }
-    setRequests((current) => [request, ...current])
-    setLastRequest(request)
-    setSubmitted(true)
   }
 
   const openRental = (item: RentalItem) => {
@@ -1011,6 +1093,7 @@ export default function App() {
     setStartDate("")
     setEndDate("")
     setLastRequest(null)
+    setSubmitError(null)
   }
 
   if (adminOpen) {
@@ -1263,10 +1346,36 @@ export default function App() {
             </p>
           </div>
 
+          {catalogLoading && (
+            <div className="mt-12 border border-slate/10 bg-white p-8 text-center text-sm text-slate/55">
+              Cargando catálogo de equipos...
+            </div>
+          )}
+
+          {!catalogLoading && catalogError && (
+            <div className="mt-12 flex flex-col items-center gap-4 border border-orange/30 bg-white p-8 text-center">
+              <p className="text-sm text-slate/70">
+                No pudimos cargar el catálogo: {catalogError}
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => setCatalogReload((count) => count + 1)}
+              >
+                Reintentar
+              </Button>
+            </div>
+          )}
+
+          {!catalogLoading && !catalogError && products.length === 0 && (
+            <div className="mt-12 border border-slate/10 bg-white p-8 text-center text-sm text-slate/55">
+              Aún no hay equipos publicados para arriendo.
+            </div>
+          )}
+
           <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {products.map((item, index) => (
               <article
-                key={item.name}
+                key={item.id ?? item.name}
                 className="group flex flex-col overflow-hidden border border-slate/12 bg-white transition-all duration-300 hover:-translate-y-1 hover:border-orange/60 hover:shadow-[0_18px_50px_rgba(23,32,38,0.12)]"
               >
                 <div className="relative h-64 overflow-hidden bg-slate">
@@ -1590,6 +1699,17 @@ export default function App() {
                     />
                   </label>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate/55">
+                    Teléfono
+                    <input
+                      required
+                      name="phone"
+                      type="tel"
+                      maxLength={20}
+                      placeholder="+56 9 1234 5678"
+                      className="mt-2 h-12 w-full border border-slate/15 bg-snow px-3 text-sm font-normal normal-case tracking-normal outline-none placeholder:text-slate/30 focus:border-orange"
+                    />
+                  </label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate/55">
                     Modelo de bota o detalles de la expedición
                     <textarea
                       rows={3}
@@ -1616,13 +1736,46 @@ export default function App() {
                         {currency.format(rentalTotal)}
                       </span>
                     </div>
+                    {rentalDays > 0 && (
+                      <div className="mt-3 border-t border-slate/10 pt-3 text-xs">
+                        {availabilityLoading && (
+                          <span className="text-slate/50">
+                            Verificando disponibilidad...
+                          </span>
+                        )}
+                        {!availabilityLoading && availabilityError && (
+                          <span className="font-semibold text-red-600">
+                            {availabilityError}
+                          </span>
+                        )}
+                        {!availabilityLoading && availability && (
+                          <span
+                            className={`font-semibold ${
+                              availability.esta_disponible
+                                ? "text-green-700"
+                                : "text-red-600"
+                            }`}
+                          >
+                            {availability.esta_disponible
+                              ? `Disponible · ${availability.cantidad_disponible} de ${availability.cantidad_total} unidades libres`
+                              : "Sin stock disponible para esas fechas"}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
+                  {submitError && (
+                    <p className="border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      {submitError}
+                    </p>
+                  )}
                   <Button
                     type="submit"
-                    disabled={rentalDays < 1}
+                    disabled={!canSubmit}
                     className="w-full disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    Reservar y continuar compra <Icon name="arrow" />
+                    {submitting ? "Enviando solicitud..." : "Reservar y continuar compra"}{" "}
+                    <Icon name="arrow" />
                   </Button>
                   <p className="text-center text-[11px] text-slate/40">
                     La reserva no genera un cobro automático. El pago se

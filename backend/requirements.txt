@@ -10,6 +10,7 @@ alembic==1.14.0
 # Data Validation & Settings (Pydantic v2 - Rust core for low CPU footprint)
 pydantic==2.9.2
 pydantic-settings==2.6.1
+email-validator==2.2.0  # Requerido por EmailStr (validación de correos)
 
 # High-Performance JSON Serializer (Green Software: ~5-10x faster than standard json)
 orjson==3.10.11
