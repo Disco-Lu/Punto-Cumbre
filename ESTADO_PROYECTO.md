@@ -180,6 +180,11 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
   - **Inventario (CRUD):** `ProductEditor` conectado a `GET /api/v1/categorias`, `POST /api/v1/admin/equipos`, `PUT /api/v1/admin/equipos/{id}` y `DELETE /api/v1/admin/equipos/{id}`, sincronizando automáticamente el catálogo público y el dashboard tras cada operación.
   - **Tiempo Real (Green Software):** Carga inicial en paralelo (`Promise.all`), revalidación al enfocar la pestaña (`focus` / `visibilitychange`), refresco liviano cada 15s **solo cuando la pestaña está visible** (0 tráfico en segundo plano), botón manual de actualización y cierre automático de sesión ante HTTP `401`.
   - Verificación exitosa con `tsc --noEmit` (exit 0) y `vite build`.
+- **Fase 6.5 (Verificación E2E de Flujo Completo en Vivo con Supabase):** ✅ **Completada**.
+  - Instaladas todas las dependencias del backend en `backend/venv` (Python 3.12.10, fijando `bcrypt==4.0.1` compatible con `passlib 1.7.4` y `email-validator==2.2.0`).
+  - Configurado `backend/.env` con la conexión IPv4 **Session Pooler** de Supabase (`aws-0-us-east-1.pooler.supabase.com:5432`) y protegido `.gitignore` contra la exposición de credenciales.
+  - Detectado y corregido el hash bcrypt inicial de `admin` en Supabase y en `database/seed.sql` (ahora coincide con `admin123`).
+  - Ejecutadas y aprobadas **15/15 pruebas E2E en vivo** contra Supabase: Healthcheck ➔ Categorías ➔ Equipos ➔ Login JWT ➔ Perfil `/me` ➔ Crear/Editar Equipo ➔ Disponibilidad antes/después ➔ Cotización automática (`3 días × $12.000 = $36.000`) ➔ Historial cliente ➔ Métricas Dashboard ➔ Listado Admin ➔ Máquina de estados completa (`pendiente` ➔ `confirmada` ➔ `en_arriendo` ➔ `devuelta`) ➔ Bloqueo de transición inválida (`400`) ➔ Limpieza de datos de prueba.
 - **Frontend (React 19 + TypeScript + Vite):** Ubicado en `front/`.
 
 ---
@@ -198,6 +203,6 @@ Especificación técnica rigurosa de **2,342 líneas**, compatible con `openapi-
 | **Fase 6.2** | Integración de Vista Pública (Catálogo y Cotizaciones reales) | ✅ Completada |
 | **Fase 6.3** | Integración de Autenticación Administrativa (JWT) | ✅ Completada |
 | **Fase 6.4** | Integración del Panel Admin en Tiempo Real (Dashboard y CRUD) | ✅ Completada |
-| **Fase 6.5** | Verificación E2E de Flujo Completo (Cliente ➔ Admin ➔ DB) | ⏳ Siguiente paso |
-| **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏸️ Pendiente |
+| **Fase 6.5** | Verificación E2E de Flujo Completo (Cliente ➔ Admin ➔ DB) | ✅ Completada |
+| **Fase 7** | Pruebas de integración, validación BDD y contrato | ⏳ Siguiente paso |
 

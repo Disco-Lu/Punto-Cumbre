@@ -16,7 +16,7 @@
 -- Hash generado con bcrypt (passlib compatible)
 -- IMPORTANTE: Cambia esta contraseña en producción
 INSERT INTO administrador (username, password_hash) VALUES
-    ('admin', '$2b$12$LJ3m4ys3Lz0QHxPdOKCiGeVJx1EHfBFVR1S7tVA3MdBaVxRdKcW4C');
+    ('admin', '$2b$12$6/57F/QuvhC17YP24YW9.eFoLJloqvIrWo9s1VMFkhqodm4sFiu1.');
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
